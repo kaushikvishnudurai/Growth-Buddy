@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.growthbuddy.food.FoodService;
 import com.growthbuddy.goal.GoalService;
 import com.growthbuddy.habit.HabitService;
+import com.growthbuddy.money.CaptureService;
 import com.growthbuddy.money.MoneyService;
 import com.growthbuddy.note.NoteService;
 import com.growthbuddy.quickadd.QuickAddService.Intent;
@@ -52,11 +53,12 @@ public class QuickAddApplier {
     private final NoteService notes;
     private final GoalService goals;
     private final MoneyService money;
+    private final CaptureService capture;
     private final ObjectMapper json;
 
     public QuickAddApplier(TaskService tasks, HabitService habits, WaterService water, WellnessService wellness,
                            ReminderService reminders, FoodService food, NoteService notes, GoalService goals,
-                           MoneyService money, ObjectMapper json) {
+                           MoneyService money, CaptureService capture, ObjectMapper json) {
         this.tasks = tasks;
         this.habits = habits;
         this.water = water;
@@ -66,6 +68,7 @@ public class QuickAddApplier {
         this.notes = notes;
         this.goals = goals;
         this.money = money;
+        this.capture = capture;
         this.json = json;
     }
 
@@ -123,6 +126,15 @@ public class QuickAddApplier {
                 return "Mood: " + it.mood();
             }
             case "expense", "income" -> {
+                // A payment automatic capture already booked: the sentence names it
+                // (its note), instead of a second row for the same money.
+                String claimed = capture.claimForTyped(userId, it.type(), java.math.BigDecimal.valueOf(it.amount()),
+                        it.date() != null ? it.date() : today, it.note());
+                if (claimed != null) {
+                    return ("expense".equals(it.type()) ? "Expense: " : "Income: ") + it.amount()
+                            + (it.note() == null || it.note().isBlank() ? "" : " (" + it.note() + ")")
+                            + " - matched the payment already captured";
+                }
                 var res = money.applyLedger(userId, ledgerWrite(it, today, money.defaultAccountId(userId, it.type())));
                 if (!res.path("rejected").isEmpty()) {
                     throw new IllegalArgumentException(res.path("rejected").get(0).path("reason").asText());

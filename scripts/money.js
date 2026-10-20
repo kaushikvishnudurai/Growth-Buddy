@@ -76,6 +76,7 @@ import {
   salaryPattern,
   salaryDue,
   salaryDueRow,
+  capturedToReview,
 } from './money-core.js';
 // The document model moved to money-core.js (boot chunk); re-exported so the tests and
 // any import of these from money.js keep working.
@@ -2319,6 +2320,212 @@ function dropExpense(m, id) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Automatic capture: "To review"                                      */
+/* ------------------------------------------------------------------ */
+
+/* Captured rows count in every total as they land; only a genuinely unclear one
+   carries capture.review (money-core capturedToReview). Most days there are none,
+   and then nothing here shows at all. Each card asks one question with two
+   answers, named for what they do. */
+const VIA_WORDS = {
+  notif: 'From a payment app alert',
+  sms: 'From a bank SMS',
+  share: 'From a message you shared',
+  ios: 'From your iPhone Shortcut',
+};
+
+function captureReviewLine(money, save) {
+  const n = capturedToReview(money).length;
+  if (!n) return null;
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-money-review-line',
+      onclick: () => openCaptureReview(money, save),
+    },
+    h('span', { class: 'gb-money-review-ic' }, Icon('inbox', { size: 17 })),
+    h(
+      'span',
+      { class: 'gb-money-review-text' },
+      h('span', { class: 'gb-money-review-count' }, String(n)),
+      n === 1 ? ' captured payment to check' : ' captured payments to check'
+    ),
+    h('span', { class: 'gb-money-review-go' }, 'Review', Icon('chevron-right', { size: 16 }))
+  );
+}
+
+function reviewQuestion(money, kind, row) {
+  const cap = row.capture || {};
+  const all = [...(money.expenses || []), ...(money.income || [])];
+  const other = cap.dupOf ? all.find((x) => x.id === cap.dupOf) : null;
+  if (cap.review === 'dup')
+    return {
+      say: other
+        ? 'You added ' + fmt(other.amount) + (other.note ? ' for ' + other.note : '') + ' in cash that day. Is this the same payment?'
+        : 'You added the same amount in cash that day. Is this the same payment?',
+      yes: { label: 'Same payment', act: 'drop', done: 'Kept your entry, removed the copy.' },
+      no: { label: 'Two payments', act: 'keep', done: 'Kept both.' },
+    };
+  if (cap.review === 'transfer')
+    return {
+      say:
+        'The same amount went out of one of your accounts and into another within minutes. Was it a move between your own accounts?',
+      yes: { label: 'Between my accounts', act: 'move', done: 'Removed from spending and income.' },
+      no: { label: 'A real payment', act: 'keep', done: 'Kept.' },
+    };
+  return {
+    say:
+      kind === 'income'
+        ? 'The message didn\u2019t say who it was from or which account. Did this money really come in?'
+        : 'The message didn\u2019t say who was paid or from which account. Is this a real payment?',
+    yes: { label: 'Keep it', act: 'keep', done: 'Kept.' },
+    no: { label: kind === 'income' ? 'Not money in' : 'Not a payment', act: 'drop', done: 'Removed.' },
+  };
+}
+
+function openCaptureReview(money, save) {
+  let live = money;
+  // A card that folds away moves the next one up under the finger; a fast second
+  // tap must not answer it unseen.
+  let guardUntil = 0;
+  const list = h('div', { class: 'gb-money-review-list', role: 'list' });
+  const empty = () =>
+    h(
+      'div',
+      { class: 'gb-money-review-empty' },
+      Icon('circle-check', { size: 22 }),
+      h('strong', null, 'All checked'),
+      h('span', null, 'Payments only come here when a message was unclear. Most days there are none.')
+    );
+
+  function commitReview(mutate) {
+    const base = live;
+    const next = clone(base);
+    mutate(next);
+    save(next, base);
+    live = next;
+  }
+
+  function card({ kind, row }) {
+    const q = reviewQuestion(live, kind, row);
+    const isExp = kind === 'expense';
+    const cats = mergedCats(live);
+    // A tag only where the answer keeps this row as it is: "is this a real payment?".
+    const tag = isExp && (row.capture || {}).review === 'check'
+      ? h(
+          'select',
+          { class: 'gb-input gb-money-review-tag', 'aria-label': 'Tag for ' + (row.note || 'this payment') },
+          cats.map((c) => h('option', { value: c.key, selected: c.key === row.category }, c.label))
+        )
+      : null;
+    const listKey = isExp ? 'expenses' : 'income';
+    const el = h(
+      'article',
+      { class: 'gb-money-review-card', role: 'listitem', 'aria-label': fmt(row.amount) + ' ' + (row.note || row.label || '') },
+      h(
+        'div',
+        { class: 'gb-money-review-head' },
+        h('span', { class: 'gb-money-review-amt' + (isExp ? '' : ' is-in') }, (isExp ? '' : '+') + fmt(row.amount)),
+        h('span', { class: 'gb-money-review-who' }, row.note || row.label || (isExp ? 'Payment' : 'Money in'))
+      ),
+      h(
+        'div',
+        { class: 'gb-money-review-meta' },
+        [
+          fmtDateShort(row.date),
+          (VIA_WORDS[(row.capture || {}).via] || '').replace(/^F/, 'f'),
+          row.bankMask ? 'account \u2022\u2022' + row.bankMask : null,
+        ]
+          .filter(Boolean)
+          .join(', ')
+      ),
+      h('p', { class: 'gb-money-review-q' }, q.say),
+      tag ? h('label', { class: 'gb-money-review-taglabel' }, h('span', null, 'Tag'), tag) : null,
+      h(
+        'div',
+        { class: 'gb-money-review-acts' },
+        h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: () => answer(q.yes) }, q.yes.label),
+        h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-money-review-no', onclick: () => answer(q.no) }, q.no.label)
+      )
+    );
+
+    function answer(a) {
+      if (Date.now() < guardUntil) return;
+      const twin = (row.capture || {}).dupOf;
+      commitReview((m) => {
+        if (a.act === 'keep') {
+          m[listKey] = m[listKey].map((x) => {
+            if (x.id !== row.id) return x;
+            const cap = { ...(x.capture || {}) };
+            delete cap.review;
+            delete cap.dupOf;
+            return { ...x, ...(tag ? { category: tag.value } : {}), capture: cap };
+          });
+        } else {
+          if (isExp) dropExpense(m, row.id);
+          else m.income = m.income.filter((x) => x.id !== row.id);
+          // A move between your accounts: its other half is no spend or income either.
+          if (a.act === 'move' && twin) {
+            dropExpense(m, twin);
+            m.income = m.income.filter((x) => x.id !== twin);
+          }
+        }
+      });
+      settle(el);
+      if (a.act === 'keep') toast.success(a.done);
+      else
+        toast.action(a.done, 'Undo', () => {
+          const back = clone(live);
+          // New ids: the server keeps a deleted id deleted, so Undo adds them back as new rows.
+          const restore = (x) => ({ ...x, id: uid(), capture: { ...(x.capture || {}), typed: true } });
+          for (const [k, list] of [['expenses', money.expenses], ['income', money.income]])
+            for (const x of list || [])
+              if ((x.id === row.id || (a.act === 'move' && x.id === twin)) && !back[k].some((y) => y.id === x.id))
+                back[k].unshift(restore(x));
+          save(back, live);
+          live = back;
+        });
+    }
+    return el;
+  }
+
+  /* An answered card folds away; the next one moves up into its place. */
+  function settle(el) {
+    const left = () => list.querySelectorAll('.gb-money-review-card:not(.is-done)').length;
+    el.classList.add('is-done');
+    el.setAttribute('aria-hidden', 'true');
+    el.querySelectorAll('button, select').forEach((b) => (b.disabled = true));
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      guardUntil = Date.now() + 400;
+      el.remove();
+      if (!left()) list.replaceChildren(empty());
+      else {
+        const next = list.querySelector('.gb-money-review-card:not(.is-done) button');
+        if (next) next.focus();
+      }
+    };
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return finish();
+    el.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 450);
+  }
+
+  const items = capturedToReview(money);
+  list.append(...(items.length ? items.map(card) : [empty()]));
+  openMoneyModal({
+    title: 'To review',
+    sub: 'These came in automatically and are already counted. One tap each settles them.',
+    body: list,
+    dismiss: 'Done',
+  });
+  refreshIcons();
+}
+
 function commitOn(money, save, mutator) {
   const next = clone(money);
   mutator(next);
@@ -3086,6 +3293,7 @@ function ScreenMoney({
   loadFailed,
   onRetryLoad,
   moneySettled,
+  openCaptureSetup,
 }) {
   money = normalizeMoney(money);
   applyCurrency(money);
@@ -4731,6 +4939,8 @@ function ScreenMoney({
     // Statement first, then the envelopes it came out of, then where it sits.
     return [
       hero,
+      captureReviewLine(money, save),
+      captureOffer(),
       ...budgetsSection(),
       accountsCard(),
       donutCard(),
@@ -4738,6 +4948,44 @@ function ScreenMoney({
       ...goalsSection(),
       healthCard(),
     ];
+  }
+
+  /* The one invitation to automatic capture, under the slip, for someone with
+     nothing captured yet: Set up opens its sheet, Not now hides it for good
+     (settings.captureOfferHidden, in the Money document, so every device agrees).
+     Gone by itself once anything has been captured. */
+  function captureOffer() {
+    if (!openCaptureSetup || money.settings.captureOfferHidden) return null;
+    if ([...money.expenses, ...(money.income || [])].some((e) => e && e.capture)) return null;
+    return h(
+      'section',
+      { class: 'gb-money-capture-offer', 'aria-labelledby': 'gb-money-capture-offer-t' },
+      h('span', { class: 'gb-money-capture-offer-ic' }, Icon('message-square-text', { size: 18 })),
+      h(
+        'div',
+        { class: 'gb-money-capture-offer-text' },
+        h('h2', { id: 'gb-money-capture-offer-t' }, 'Let your bank\u2019s messages fill this in'),
+        h(
+          'p',
+          null,
+          'Every debit your bank texts you can land here on its own. No bank login, and nothing is read until you switch it on.'
+        ),
+        h(
+          'div',
+          { class: 'gb-money-capture-offer-acts' },
+          h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: () => openCaptureSetup() }, 'Set up'),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact',
+              onclick: () => commit((m) => (m.settings = Object.assign({}, m.settings, { captureOfferHidden: true }))),
+            },
+            'Not now'
+          )
+        )
+      )
+    );
   }
 
   function donutCard() {
@@ -5619,7 +5867,16 @@ function ScreenMoney({
           e.note || c.label,
           e.source === 'bank'
             ? h('span', { class: 'gb-money-bank-tag', title: 'Imported from your bank' + (e.bankMask ? ' (\u2022\u2022' + e.bankMask + ')' : '') }, 'Bank')
-            : null,
+            : e.capture
+              ? h(
+                  'span',
+                  {
+                    class: 'gb-money-bank-tag gb-money-auto-tag' + (e.capture.review ? ' is-review' : ''),
+                    title: (VIA_WORDS[e.capture.via] || 'Added automatically') + (e.bankMask ? ' (\u2022\u2022' + e.bankMask + ')' : '') + (e.capture.review ? '. To review.' : ''),
+                  },
+                  'Auto'
+                )
+              : null,
           e.reflection
             ? h(
                 'span',
@@ -6772,7 +7029,21 @@ function ScreenMoney({
                       'aria-label': 'Edit ' + incomeName(e) + ', ' + fmt(e.amount),
                       onclick: () => openAddIncome(e),
                     },
-                    h('div', { class: 'gb-money-exp-note' }, incomeName(e)),
+                    h(
+                      'div',
+                      { class: 'gb-money-exp-note' },
+                      incomeName(e),
+                      e.capture
+                        ? h(
+                            'span',
+                            {
+                              class: 'gb-money-bank-tag gb-money-auto-tag' + (e.capture.review ? ' is-review' : ''),
+                              title: (VIA_WORDS[e.capture.via] || 'Added automatically') + (e.capture.review ? '. To review.' : ''),
+                            },
+                            'Auto'
+                          )
+                        : null
+                    ),
                     h(
                       'div',
                       { class: 'gb-money-exp-meta' },

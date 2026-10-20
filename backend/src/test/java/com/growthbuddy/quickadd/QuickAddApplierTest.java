@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.food.FoodService;
@@ -32,10 +33,11 @@ class QuickAddApplierTest {
     private final TaskService tasks = mock(TaskService.class);
     private final WaterService water = mock(WaterService.class);
     private final MoneyService money = mock(MoneyService.class);
+    private final com.growthbuddy.money.CaptureService capture = mock(com.growthbuddy.money.CaptureService.class);
     private final ObjectMapper json = new ObjectMapper();
     private final QuickAddApplier applier = new QuickAddApplier(tasks, mock(HabitService.class), water,
             mock(WellnessService.class), mock(ReminderService.class), mock(FoodService.class),
-            mock(NoteService.class), mock(GoalService.class), money, json);
+            mock(NoteService.class), mock(GoalService.class), money, capture, json);
     private static final UUID U = UUID.randomUUID();
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 10);
 
@@ -50,6 +52,15 @@ class QuickAddApplierTest {
         assertTrue(lines.get(0).contains("switched off"));
         assertTrue(lines.get(1).contains("boom"));
         assertTrue(lines.get(2).startsWith("Open the app"));
+    }
+
+    @Test
+    void aSentenceForAPaymentAlreadyCapturedNamesItInsteadOfBookingASecond() {
+        when(capture.claimForTyped(U, "expense", java.math.BigDecimal.valueOf(240), TODAY, "chai with team"))
+                .thenReturn("cap-abc");
+        var lines = applier.apply(U, Map.of(), List.of(Intent.of("expense").amount(240).note("chai with team")), TODAY);
+        verify(money, never()).applyLedger(any(), any());
+        assertTrue(lines.get(0).contains("matched the payment already captured"), lines.get(0));
     }
 
     @Test

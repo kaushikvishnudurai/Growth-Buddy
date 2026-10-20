@@ -1,0 +1,302 @@
+/* =====================================================================
+   Money's automatic capture: the Settings section, its consent sheets and
+   the iPhone Shortcut setup (scripts/capture-ui.js, which imports this, so
+   it loads with that lazy chunk). Tokens only.
+
+   Signature: the specimen (.gb-cap-specimen). A bank message drawn as what it
+   is, an SMS bubble under its sender ID or a notification card under its app,
+   with the parts Growth Buddy keeps lit as Space Mono marks. The marks light
+   in reading order the first time a sheet opens: the one motion here, and it
+   shows what the reader does. Everything around it stays quiet: rows on
+   hairlines like the rest of Settings.
+   ===================================================================== */
+
+.gb-cap {
+  display: grid;
+  gap: var(--space-3);
+}
+.gb-cap h3 {
+  margin: 0;
+}
+.gb-cap-lede {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--fg2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+.gb-cap-note {
+  margin: 0;
+  color: var(--fg2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+/* Source rows: icon, name over status, the switch. */
+.gb-cap-rows {
+  display: grid;
+}
+.gb-cap-rows.is-off {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.gb-cap-row {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.gb-cap-row:last-child {
+  border-bottom: none;
+}
+.gb-cap-row-ic {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-cap-row.is-unavailable .gb-cap-row-ic {
+  background: var(--surface-2);
+  color: var(--fg2);
+}
+.gb-cap-row-text {
+  min-width: 0;
+}
+.gb-cap-row-name {
+  font-weight: 600;
+  color: var(--fg1);
+}
+.gb-cap-row-status {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  line-height: var(--leading-snug);
+  color: var(--fg2);
+}
+.gb-cap-row-status.is-waiting {
+  color: var(--warning-soft-fg);
+}
+.gb-cap-fix {
+  margin-top: var(--space-2);
+}
+
+/* ---------------- The specimen ---------------- */
+
+.gb-cap-specimen {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.gb-cap-bubble {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg1);
+}
+/* An SMS is a bubble with its sender above it; a notification is a card. */
+.gb-cap-specimen.is-sms .gb-cap-bubble {
+  border-radius: var(--radius-sm) var(--radius-xl) var(--radius-xl) var(--radius-xl);
+}
+.gb-cap-specimen.is-notif .gb-cap-bubble {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.gb-cap-from {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-cap-sender {
+  font-family: var(--font-mono);
+  color: var(--fg1);
+}
+.gb-cap-app {
+  font-weight: 600;
+  color: var(--fg1);
+}
+.gb-cap-msg {
+  margin: 0;
+  white-space: pre-line;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--fg2);
+}
+.gb-cap-mark {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 4px;
+  margin: 0 -1px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gb-cap-sheet .gb-cap-mark {
+    animation: gb-cap-light var(--dur-slow) var(--ease-out) both;
+    animation-delay: calc(180ms + var(--i, 0) * 110ms);
+  }
+}
+@keyframes gb-cap-light {
+  from {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+    color: var(--fg2);
+  }
+}
+
+.gb-cap-caption {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--fg2);
+}
+/* What is kept, as the entry it becomes: value left in mono, what it is right. */
+.gb-cap-kept {
+  display: grid;
+}
+.gb-cap-kept-row {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, auto) 1fr;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-top: 1px solid var(--surface-3);
+  font-size: 0.8125rem;
+}
+.gb-cap-kept-row:last-child {
+  border-bottom: 1px solid var(--surface-3);
+}
+.gb-cap-kept-val {
+  font-family: var(--font-mono);
+  color: var(--fg1);
+}
+.gb-cap-kept-key {
+  color: var(--fg2);
+}
+.gb-cap-rest {
+  color: var(--fg1);
+  font-weight: 500;
+}
+
+/* ---------------- Consent sheet ---------------- */
+
+.gb-cap-consent {
+  display: grid;
+  gap: var(--space-5);
+}
+.gb-cap-facts {
+  margin: 0;
+  display: grid;
+  gap: var(--space-1) var(--space-4);
+}
+.gb-cap-facts dt {
+  font-weight: 600;
+  color: var(--fg1);
+  font-size: var(--text-sm);
+}
+.gb-cap-facts dd {
+  margin: 0 0 var(--space-3);
+  color: var(--fg2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+.gb-cap-facts dd:last-child {
+  margin-bottom: 0;
+}
+@container gb-main (min-width: 34rem) {
+  .gb-cap-facts {
+    grid-template-columns: 9.5rem 1fr;
+  }
+  .gb-cap-facts dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* ---------------- iPhone Shortcut setup ---------------- */
+
+.gb-cap-setup {
+  display: grid;
+  gap: var(--space-5);
+}
+.gb-cap-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: gb-cap-step;
+  display: grid;
+  gap: var(--space-4);
+}
+.gb-cap-steps li {
+  counter-increment: gb-cap-step;
+  display: grid;
+  grid-template-columns: 1.75rem 1fr;
+  column-gap: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg2);
+}
+.gb-cap-steps li::before {
+  content: counter(gb-cap-step);
+  grid-row: span 3;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.gb-cap-steps strong {
+  color: var(--fg1);
+}
+.gb-cap-steps code,
+.gb-cap-copy-val {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.gb-cap-get {
+  margin-top: var(--space-2);
+  justify-self: start;
+}
+.gb-cap-keys {
+  display: grid;
+  gap: var(--space-3);
+}
+.gb-cap-copy {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.gb-cap-copy-label {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-cap-copy-val {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg1);
+}
+.gb-cap-copy-val.is-secret {
+  letter-spacing: 0.02em;
+}
+.gb-cap-copy .gb-btn {
+  min-height: 44px;
+}

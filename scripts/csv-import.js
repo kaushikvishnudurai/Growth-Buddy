@@ -492,13 +492,23 @@ export function markDuplicates(entries, money) {
   const add = (k) => have.set(k, (have.get(k) || 0) + 1);
   for (const e of (money && money.expenses) || []) add(dupKey('expense', e.date, e.amount, e.note));
   for (const i of (money && money.income) || []) add(dupKey('income', i.date, i.amount, i.label));
+  // A payment automatic capture booked has the payee as its note, the statement
+  // has the bank's narration: same kind, day and amount is that payment, each
+  // captured row answering for one statement line.
+  const captured = new Map();
+  const cap = (k) => captured.set(k, (captured.get(k) || 0) + 1);
+  for (const e of (money && money.expenses) || []) if (e.capture) cap(dupKey('expense', e.date, e.amount, ''));
+  for (const i of (money && money.income) || []) if (i.capture) cap(dupKey('income', i.date, i.amount, ''));
   const seen = new Map();
   for (const e of entries) {
     const k = dupKey(e.kind, e.date, e.amount, e.note);
     const n = seen.get(k) || 0;
     seen.set(k, n + 1);
     const m = have.get(k) || 0;
-    e.dup = m ? 'existing' : n ? 'file' : null;
+    const ck = dupKey(e.kind, e.date, e.amount, '');
+    const byCapture = !m && captured.get(ck) > 0;
+    if (byCapture) captured.set(ck, captured.get(ck) - 1);
+    e.dup = m || byCapture ? 'existing' : n ? 'file' : null;
     // A ticked 'existing' row is a second copy: the count keeps its id off the one already saved.
     e.id = 'csv-' + hash(k + '|' + n + (m ? '|' + m : ''));
   }

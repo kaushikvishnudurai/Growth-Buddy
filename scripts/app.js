@@ -97,6 +97,8 @@ import {
   suggestCategory,
   homeCur,
   fmtIn,
+  matchCaptured,
+  claimCaptured,
 } from './money-core.js';
 import { quickMoney, quickCategory, currencySymbol, intentDay, dayWord, stripEmoji, capitalise } from './quick-add.js';
 import {
@@ -189,6 +191,8 @@ import {
   onDeepLink,
   deepLinkHash,
   publicSiteUrl,
+  capturePlugin,
+  onSharedText,
 } from './native.js';
 import { launchIntent } from './launch-intent.js';
 import { registerSW } from 'virtual:pwa-register';
@@ -3205,6 +3209,7 @@ async function loadDataOnce() {
     syncHealthFromPhone(); // ends with autoTickHealthHabits
     autoTickHealthHabits();
     loadPhoneNight();
+    syncCapturesFromPhone();
   } catch (err) {
     if (err && err.sessionEnded) return; // that session is gone; this answer is nobody's
     if (refresh) {
@@ -4124,6 +4129,91 @@ async function syncHealthFromPhone({ force = false } = {}) {
   autoTickHealthHabits();
 }
 
+/* Money's automatic capture: payments the phone read since the app was last open
+   (bank and UPI app notifications, bank SMS; capture.js parses them here and sends
+   only the fields), then Money re-read when one landed. Nothing to do off-device,
+   with Money off, or in an APK without the plugin. A shared message that is a
+   payment arrives here too, live (onSharedText) or at launch (takeShared). */
+let captureSyncing = false;
+async function syncCapturesFromPhone() {
+  if (!state.user || captureSyncing || !featureOn('money') || !capturePlugin()) return;
+  captureSyncing = true;
+  try {
+    const cap = await import('./capture.js');
+    const res = await cap.drainPhoneCaptures({ api, money: state.money });
+    if (res && res.added) await reloadMoneyFromServer();
+    const shared = await capturePlugin().takeShared();
+    if (shared && shared.text) await handleSharedText(shared.text);
+  } catch (err) {
+    console.warn('Capture sync skipped:', err && err.message);
+  } finally {
+    captureSyncing = false;
+  }
+}
+
+/* Automatic capture's setup on its own sheet, opened from Money (the same section
+   Settings > Layout > Money shows). capture-ui.js is lazy and brings its CSS. */
+async function openCaptureSetup() {
+  let m;
+  try {
+    m = await import('./capture-ui.js');
+  } catch (err) {
+    if (!reloadIfStaleChunk(err)) toastError(err, 'Could not open automatic capture.');
+    return;
+  }
+  openModal({
+    title: 'Fill in spends automatically',
+    sub: 'From the messages your bank already sends you. Nothing is read until you switch a source on.',
+    body: m.CaptureSection(
+      { api, openModal, toastSuccess, toastError, pushToast, relativeTime, reloadMoney: reloadMoneyFromServer, state },
+      { heading: false }
+    ),
+    dismiss: 'Done',
+  });
+}
+
+/* What a server-side Money write (capture, bank sync) booked, shown without a reload. */
+async function reloadMoneyFromServer() {
+  const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
+  adoptServerMoney(theirs);
+  cacheMoney();
+  persistMoney();
+  render();
+}
+
+/* Shared text: a bank or UPI message is captured at once (with Undo); anything
+   else goes to Quick add's preview as before, where nothing is written until
+   the user confirms. */
+async function handleSharedText(text) {
+  if (featureOn('money')) {
+    let got = null;
+    try {
+      const cap = await import('./capture.js');
+      got = await cap.captureShared({ api, money: state.money, text });
+    } catch (err) {
+      toastError(err, 'Could not add that payment.');
+      return;
+    }
+    if (got) {
+      const r = got.result;
+      const id = r.ids && r.ids[0];
+      const what = fmtIn(got.item.amount, homeCur(state.money)) + (got.item.merchant ? ' at ' + got.item.merchant : '');
+      if (r.added) {
+        await reloadMoneyFromServer();
+        pushToast(
+          (got.item.kind === 'credit' ? 'Added money in: ' : 'Added: ') + what + (r.review ? '. Check it under To review.' : '.'),
+          'success',
+          6000,
+          id ? { label: 'Undo', run: () => removeQuickMoney(new Set([id])) } : undefined
+        );
+      } else if (r.merged) pushToast('Already in Money: ' + what + '.', 'info');
+      else pushToast('That payment was deleted from Money before, so it stays out.', 'info');
+      return;
+    }
+  }
+  openAddSheet({ text, preview: true });
+}
+
 async function connectHealth() {
   if (!(await requestHealthAccess())) {
     pushToast(
@@ -4477,6 +4567,15 @@ function addQuickExpense(it) {
   const next = normalizeMoney(base);
   const q = quickMoney(base, it, 'expense', todayKey());
   const note = capitalise(String(it.note || '').trim());
+  // Automatic capture already booked this payment: the sentence names that row
+  // instead of adding the money a second time (money-core matchCaptured).
+  const hit = !q.orig && matchCaptured(base, 'expense', q.amount, q.date);
+  if (hit) {
+    const patch = note ? { note, category: quickCategory(base, suggestCategory(note, base)) } : {};
+    next.expenses = next.expenses.map((x) => (x.id === hit.id ? claimCaptured(x, note, patch) : x));
+    saveMoney(next, base);
+    return { id: hit.id, was: hit, matched: capturedLine(hit, base) };
+  }
   const id = newMoneyId();
   next.expenses.unshift({
     id,
@@ -4492,7 +4591,7 @@ function addQuickExpense(it) {
   });
   if (q.accountId) next.settings.lastAccountId = q.accountId;
   saveMoney(next, base);
-  return id;
+  return { id };
 }
 function addQuickIncome(it) {
   const base = state.money;
@@ -4500,6 +4599,13 @@ function addQuickIncome(it) {
   const label = capitalise(String(it.note || '').trim());
   const salary = /salary/i.test(label);
   const q = quickMoney(base, it, 'income', todayKey());
+  const hit = !q.orig && matchCaptured(base, 'income', q.amount, q.date);
+  if (hit) {
+    const patch = label ? { label, source: salary ? 'salary' : hit.source } : {};
+    next.income = next.income.map((x) => (x.id === hit.id ? claimCaptured(x, label, patch) : x));
+    saveMoney(next, base);
+    return { id: hit.id, was: hit, matched: capturedLine(hit, base) };
+  }
   const id = newMoneyId();
   (next.income = next.income || []).unshift({
     id,
@@ -4511,9 +4617,24 @@ function addQuickIncome(it) {
     ...(q.accountId ? { accountId: q.accountId } : {}),
   });
   saveMoney(next, base);
-  return id;
+  return { id };
 }
 /* Quick add's Undo for what it put in Money. */
+/* The toast for a quick add that named a captured payment instead of adding one:
+   it says which row it filled in, not the account a new row would have used. */
+function capturedLine(hit, money) {
+  const was = hit.note || hit.label;
+  return 'Matched the ' + fmtIn(hit.amount, homeCur(money)) + (was ? ' ' + was : '') + ' payment already captured.';
+}
+/* Undo of a quick money entry: a new row goes, a captured row it named goes back
+   to what it was (deleting it would delete the payment). */
+function undoQuickMoney(made) {
+  if (!made.was) return removeQuickMoney(new Set([made.id]));
+  const base = state.money;
+  const next = normalizeMoney(base);
+  for (const list of ['expenses', 'income']) next[list] = (next[list] || []).map((x) => (x.id === made.id ? made.was : x));
+  saveMoney(next, base);
+}
 function removeQuickMoney(ids) {
   const base = state.money;
   const next = normalizeMoney(base);
@@ -4982,7 +5103,8 @@ function undoAll(applied) {
 function announceQuickAdd(applied, line) {
   const undo = undoAll(applied);
   const one = applied.length === 1 ? applied[0].it : null;
-  const text = line || loggedToLine(applied);
+  const matched = applied.length === 1 && applied[0].ref && applied[0].ref.matched;
+  const text = matched || line || loggedToLine(applied);
   if (undo) pushToast(text, 'success', 6000, { label: 'Undo', run: undo });
   else if (one && (one.type === 'sleep' || one.type === 'mood'))
     pushToast(text, 'success', 6000, { label: 'Edit', run: one.type === 'sleep' ? openSleepSchedule : openMoodCheckin });
@@ -5106,13 +5228,17 @@ async function applyIntent(it) {
     }
     case 'expense': {
       if (!it.amount) return false;
-      const id = addQuickExpense(it);
-      return () => removeQuickMoney(new Set([id]));
+      const made = addQuickExpense(it);
+      const undo = () => undoQuickMoney(made);
+      if (made.matched) undo.matched = made.matched;
+      return undo;
     }
     case 'income': {
       if (!it.amount) return false;
-      const id = addQuickIncome(it);
-      return () => removeQuickMoney(new Set([id]));
+      const made = addQuickIncome(it);
+      const undo = () => undoQuickMoney(made);
+      if (made.matched) undo.matched = made.matched;
+      return undo;
     }
     case 'note': {
       if (!it.text) return false;
@@ -8194,9 +8320,9 @@ function runLaunchIntent() {
   pendingLaunch = null;
   if (!it) return;
   if (it.share) {
-    // The shared words go through Quick add's own preview; nothing is written
-    // until the user ticks and confirms there.
-    openAddSheet({ text: it.share, preview: true });
+    // A bank or UPI message is captured (with Undo); other words go through
+    // Quick add's own preview, where nothing is written until the user confirms.
+    handleSharedText(it.share);
     return;
   }
   if (it.shortcut === 'water' && featureOn('water')) {
@@ -8518,7 +8644,7 @@ function settingsContext() {
   return {
     PREMIUM_KEY, loadPremiumCss, applyPremium, TEXT_SCALE_KEY, applyTextScale, state, pushToast,
     toastError, toastSuccess, loadToken, saveSession, cacheMoney, rememberMoneyVersion,
-    adoptServerMoney, persistMoney, saveMoney, saveUiPrefs, notifySound, readCustomChimes, storeCustomChimes,
+    adoptServerMoney, reloadMoneyFromServer, persistMoney, saveMoney, saveUiPrefs, notifySound, readCustomChimes, storeCustomChimes,
     newSoundId, todayKey, syncUserSession, enablePushFlow, api, withPendingWater, invalidateWeek,
     pickedTheme, setThemeChoice, notifyMuted, keyOfDate, shortDay, reminderQuickAdd, uploadNewCustomSound,
     openIcsImportDialog, snoozeMinutes, cancelReminderSnooze, waterReminderPrefs,
@@ -9676,6 +9802,8 @@ function armNotificationActions() {
   });
   // Android carries the buttons out natively; with the app open, show the result.
   onNativeChanges(() => takeNativeChanges().then((changed) => changed && state.user && loadData()));
+  // Shared into the app while it was open (Money's capture, else Quick add).
+  onSharedText(() => syncCapturesFromPhone());
 }
 
 async function handleNotificationAction(ev) {
@@ -12545,6 +12673,7 @@ const SCREENS = {
             onRetryLoad: () => loadSecondaryData(),
             // The CSV import waits on this between batches: true once nothing is left unsent.
             moneySettled: moneySettledFor(sessionGen()),
+            openCaptureSetup,
           })
       ),
   },
@@ -14710,6 +14839,7 @@ document.addEventListener('visibilitychange', () => {
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();
     syncHealthFromPhone(); // walked since the app was last open
+    syncCapturesFromPhone(); // paid for something since
     autoTickHealthHabits();
     // A notification button did something while the app was away: show it.
     takeNativeChanges().then((changed) => changed && state.user && loadData());

@@ -2,7 +2,7 @@
    Growth Buddy — Lucide icon subset
    Only the icons actually referenced in the app (validated against the
    lucide registry). This is what makes the bundle tree-shake: importing
-   the full `icons` object pulls in ~1500 icons (~600 kB); this subset is 122.
+   the full `icons` object pulls in ~1500 icons (~600 kB); this subset is 127.
    Regenerate when adding new icon names (see scripts/ note in README).
    ===================================================================== */
 import {
@@ -158,6 +158,11 @@ import {
   SlidersHorizontal,
   Keyboard,
   CornerDownLeft,
+  BellRing,
+  MessageSquareText,
+  Smartphone,
+  Inbox,
+  Fingerprint,
 } from 'lucide';
 
 export const icons = {
@@ -313,4 +318,9 @@ export const icons = {
   SlidersHorizontal,
   Keyboard,
   CornerDownLeft,
+  BellRing,
+  MessageSquareText,
+  Smartphone,
+  Inbox,
+  Fingerprint,
 };

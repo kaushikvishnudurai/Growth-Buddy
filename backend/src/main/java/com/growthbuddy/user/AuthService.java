@@ -137,6 +137,7 @@ public class AuthService {
         "mentor_threads", "circle_members", "circle_removals", "circle_post_reactions", "circle_post_comments", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
         "money_state", "money_accounts", "money_transactions", "money_tx_tombstones", "bank_feed_consents",
+        "capture_sources", "capture_refs",
         "calendar_reminders", "reminder_done", "note_drafts", "note_edit_drafts", "notes", "sessions",
         "idempotency_keys", "health_readings",
     };

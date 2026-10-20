@@ -292,4 +292,15 @@ assert.deepEqual(
   );
 }
 
+// A statement line for a payment automatic capture already booked (payee note vs the
+// bank's narration) is unticked as already in Money; each captured row covers one line.
+{
+  const money = { expenses: [{ id: 'cap-1', date: '2026-10-20', amount: 250, note: 'Swiggy', capture: { via: 'sms' } }], income: [] };
+  const lines = markDuplicates(
+    read('date,amount,note\n2026-10-20,-250,UPI/629312345678/SWIGGY\n2026-10-20,-250,UPI/629399999999/SWIGGY\n', { positiveIs: 'in' }).entries,
+    money
+  );
+  assert.deepEqual(lines.map((e) => e.dup), ['existing', null], 'one captured row answers for one line');
+}
+
 console.log('csv-import: all checks passed');
