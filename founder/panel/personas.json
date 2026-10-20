@@ -1,0 +1,222 @@
+[
+ {
+  "id": "P001",
+  "name": "Emma",
+  "age": 29,
+  "segment": "Mid-level IT / corporate",
+  "income": 846000,
+  "behaviour": "Tracks nothing",
+  "behaviour_how": "Checks the bank balance and UPI history when money feels short; has never kept a budget.",
+  "objection": "One app for money, habits, health and food sounds cluttered",
+  "habit": "your salary lands on the 1st and is mostly gone by the 20th"
+ },
+ {
+  "id": "P002",
+  "name": "Zoe",
+  "age": 25,
+  "segment": "Fresher / early-career",
+  "income": 774000,
+  "behaviour": "Uses a free AA app already",
+  "behaviour_how": "Has Fold, CRED Money, INDmoney or Jupiter linked and looks at it now and then.",
+  "objection": "I would not pay for an expense tracker",
+  "habit": "you order food on Swiggy or Zomato three or four times a week"
+ },
+ {
+  "id": "P003",
+  "name": "Ava",
+  "age": 26,
+  "segment": "High earner",
+  "income": 1978000,
+  "behaviour": "Tried and quit apps",
+  "behaviour_how": "Has installed two or three expense or habit apps (Walnut/axio, Money Manager, a habit tracker) and stopped within weeks.",
+  "objection": "I do not want to link my bank account to an unknown app",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P004",
+  "name": "Amara",
+  "age": 22,
+  "segment": "Fresher / early-career",
+  "income": 541000,
+  "behaviour": "Tracks nothing",
+  "behaviour_how": "Checks the bank balance and UPI history when money feels short; has never kept a budget.",
+  "objection": "I have quit every tracker I tried within two weeks",
+  "habit": "you pay for almost everything by UPI on PhonePe or GPay"
+ },
+ {
+  "id": "P005",
+  "name": "Pablo",
+  "age": 22,
+  "segment": "Fresher / early-career",
+  "income": 445000,
+  "behaviour": "Tried and quit apps",
+  "behaviour_how": "Has installed two or three expense or habit apps (Walnut/axio, Money Manager, a habit tracker) and stopped within weeks.",
+  "objection": "One app for money, habits, health and food sounds cluttered",
+  "habit": "you keep meaning to start going to the gym"
+ },
+ {
+  "id": "P006",
+  "name": "Luca",
+  "age": 30,
+  "segment": "Mid-level IT / corporate",
+  "income": 1390000,
+  "behaviour": "Tracks nothing",
+  "behaviour_how": "Checks the bank balance and UPI history when money feels short; has never kept a budget.",
+  "objection": "Auto-tracking apps miss or duplicate transactions and I end up fixing them",
+  "habit": "your salary lands on the 1st and is mostly gone by the 20th"
+ },
+ {
+  "id": "P007",
+  "name": "Sana",
+  "age": 24,
+  "segment": "Mid-level IT / corporate",
+  "income": 1168000,
+  "behaviour": "Privacy-wary",
+  "behaviour_how": "Will not link a bank account or give SMS access to an app they do not know.",
+  "objection": "I have quit every tracker I tried within two weeks",
+  "habit": "you pay for almost everything by UPI on PhonePe or GPay"
+ },
+ {
+  "id": "P008",
+  "name": "Sam",
+  "age": 28,
+  "segment": "Fresher / early-career",
+  "income": 723000,
+  "behaviour": "Self-improvement content fan",
+  "behaviour_how": "Watches productivity and finance YouTube, buys books like Atomic Habits, starts new routines on Mondays.",
+  "objection": "One app for money, habits, health and food sounds cluttered",
+  "habit": "you live in a shared flat or PG and split bills on Splitwise"
+ },
+ {
+  "id": "P009",
+  "name": "Quinn",
+  "age": 30,
+  "segment": "High earner",
+  "income": 2985000,
+  "behaviour": "Tried and quit apps",
+  "behaviour_how": "Has installed two or three expense or habit apps (Walnut/axio, Money Manager, a habit tracker) and stopped within weeks.",
+  "objection": "Will it be around in a year, and is my data safe with a solo developer?",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P010",
+  "name": "Maya",
+  "age": 28,
+  "segment": "Fresher / early-career",
+  "income": 538000,
+  "behaviour": "Spreadsheet tracker",
+  "behaviour_how": "Keeps a Google Sheet or Excel of expenses, updated at month end when they remember.",
+  "objection": "Auto-tracking apps miss or duplicate transactions and I end up fixing them",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P011",
+  "name": "Oscar",
+  "age": 26,
+  "segment": "Mid-level IT / corporate",
+  "income": 1031000,
+  "behaviour": "Privacy-wary",
+  "behaviour_how": "Will not link a bank account or give SMS access to an app they do not know.",
+  "objection": "I do not want to link my bank account to an unknown app",
+  "habit": "you live in a shared flat or PG and split bills on Splitwise"
+ },
+ {
+  "id": "P012",
+  "name": "Anya",
+  "age": 22,
+  "segment": "Mid-level IT / corporate",
+  "income": 1172000,
+  "behaviour": "Free-only",
+  "behaviour_how": "Pays for Netflix or Prime at most; never pays for a utility app and looks for the free version.",
+  "objection": "I do not want to link my bank account to an unknown app",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P013",
+  "name": "Harper",
+  "age": 23,
+  "segment": "Fresher / early-career",
+  "income": 784000,
+  "behaviour": "Free-only",
+  "behaviour_how": "Pays for Netflix or Prime at most; never pays for a utility app and looks for the free version.",
+  "objection": "Will it be around in a year, and is my data safe with a solo developer?",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P014",
+  "name": "Nadia",
+  "age": 25,
+  "segment": "Mid-level IT / corporate",
+  "income": 1169000,
+  "behaviour": "Tracks nothing",
+  "behaviour_how": "Checks the bank balance and UPI history when money feels short; has never kept a budget.",
+  "objection": "Fold, CRED and INDmoney already show my spends for free",
+  "habit": "you pay for almost everything by UPI on PhonePe or GPay"
+ },
+ {
+  "id": "P015",
+  "name": "Lena",
+  "age": 26,
+  "segment": "Mid-level IT / corporate",
+  "income": 1345000,
+  "behaviour": "Self-improvement content fan",
+  "behaviour_how": "Watches productivity and finance YouTube, buys books like Atomic Habits, starts new routines on Mondays.",
+  "objection": "I do not want to link my bank account to an unknown app",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P016",
+  "name": "Ben",
+  "age": 26,
+  "segment": "High earner",
+  "income": 2261000,
+  "behaviour": "Free-only",
+  "behaviour_how": "Pays for Netflix or Prime at most; never pays for a utility app and looks for the free version.",
+  "objection": "Auto-tracking apps miss or duplicate transactions and I end up fixing them",
+  "habit": "you keep meaning to start going to the gym"
+ },
+ {
+  "id": "P017",
+  "name": "Selin",
+  "age": 28,
+  "segment": "Fresher / early-career",
+  "income": 651000,
+  "behaviour": "Tracks nothing",
+  "behaviour_how": "Checks the bank balance and UPI history when money feels short; has never kept a budget.",
+  "objection": "Will it be around in a year, and is my data safe with a solo developer?",
+  "habit": "you pay for almost everything by UPI on PhonePe or GPay"
+ },
+ {
+  "id": "P018",
+  "name": "Celine",
+  "age": 26,
+  "segment": "Fresher / early-career",
+  "income": 742000,
+  "behaviour": "Uses a free AA app already",
+  "behaviour_how": "Has Fold, CRED Money, INDmoney or Jupiter linked and looks at it now and then.",
+  "objection": "Will it be around in a year, and is my data safe with a solo developer?",
+  "habit": "you live in a shared flat or PG and split bills on Splitwise"
+ },
+ {
+  "id": "P019",
+  "name": "Theo",
+  "age": 23,
+  "segment": "Fresher / early-career",
+  "income": 538000,
+  "behaviour": "Tried and quit apps",
+  "behaviour_how": "Has installed two or three expense or habit apps (Walnut/axio, Money Manager, a habit tracker) and stopped within weeks.",
+  "objection": "Will it be around in a year, and is my data safe with a solo developer?",
+  "habit": "you spend an hour on WhatsApp and Instagram every evening"
+ },
+ {
+  "id": "P020",
+  "name": "Ivy",
+  "age": 30,
+  "segment": "Mid-level IT / corporate",
+  "income": 920000,
+  "behaviour": "Spreadsheet tracker",
+  "behaviour_how": "Keeps a Google Sheet or Excel of expenses, updated at month end when they remember.",
+  "objection": "One app for money, habits, health and food sounds cluttered",
+  "habit": "you pay for almost everything by UPI on PhonePe or GPay"
+ }
+]

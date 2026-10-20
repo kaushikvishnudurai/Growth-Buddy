@@ -1,0 +1,13 @@
+{
+  "id": "P014",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "need",
+  "reason": "Fold, CRED and INDmoney already show me where my UPI money went, for free, and I never open them anyway. The free tier might get a download from me, but I can't see myself paying for an AI coach or receipt photos when I don't even look at my spends.",
+  "objection": "It's a brand-new app from one developer with zero reviews, and it wants me to link my bank account. Fold already does the spend view for free, so I'd be giving my bank data to an unknown app to get something I mostly have already.",
+  "would_change_my_mind": "If the one-thing-a-day nudge actually got my month-end balance up, say a friend showing me they saved a few thousand a month with it, I'd pay the Rs 99 for Pro.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

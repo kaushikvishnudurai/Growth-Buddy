@@ -1,0 +1,13 @@
+{
+  "id": "P011",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The whole pitch hangs on linking my bank through Account Aggregator, and I am not doing that for a brand-new app from one developer with zero reviews. Without the bank link I am back to typing spends, which I already half-do on Splitwise, so there is nothing here worth Rs 99 a month to me yet.",
+  "objection": "I do not want to link my bank account to an unknown app. Even if AA is RBI-regulated, I have no idea who this solo developer is, where my data sits or what happens if the app shuts down.",
+  "would_change_my_mind": "Real reviews and a clear privacy page showing exactly what data is pulled and stored, plus the app being genuinely useful without the bank link (for example, importing my Splitwise balances) so I can try the free tier for a few weeks first.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

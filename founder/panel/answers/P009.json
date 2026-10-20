@@ -1,0 +1,13 @@
+{
+  "id": "P009",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "Rs 99 is nothing to me, but I am not linking my bank accounts to a brand-new app from one developer with zero reviews. I have already quit Walnut and Money Manager within weeks, so I would at most try the free tier and probably drop it too.",
+  "objection": "My financial data sitting with a solo developer who might shut down or get breached next year, and no proof yet that I would actually keep using it.",
+  "would_change_my_mind": "Seeing it still running after a year with real reviews and a clear statement of where my bank data is stored and who can access it.",
+  "price_too_cheap": 29,
+  "price_cheap": 99,
+  "price_expensive": 499,
+  "price_too_expensive": 999
+}

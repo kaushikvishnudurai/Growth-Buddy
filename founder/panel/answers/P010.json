@@ -1,0 +1,13 @@
+{
+  "id": "P010",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I might download the free version to see if the bank sync actually works, but I wouldn't pay for Pro. Every auto-tracker I've tried has missed or doubled up UPI payments, and a brand new app from one developer with zero reviews isn't going to get my bank linked straight away, let alone Rs 99 a month.",
+  "objection": "Auto-sync gets my transactions wrong and I spend more time fixing it than I would just updating my sheet. And I'm not sure about linking my bank account to an unknown solo developer's app.",
+  "would_change_my_mind": "A friend or colleague showing me a month where it caught all their UPI spends without duplicates, plus some proof the data is safe, like reviews or a clear privacy policy.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

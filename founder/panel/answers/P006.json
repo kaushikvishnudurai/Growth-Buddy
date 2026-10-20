@@ -1,0 +1,13 @@
+{
+  "id": "P006",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "habit",
+  "reason": "I've never stuck with a budget or a tracker, and I just check my UPI history when money feels tight. I might download the free version after a bad month, but I wouldn't pay for Pro when I don't even know if I'll open it in week two.",
+  "objection": "Every auto-tracking app I've tried misses or doubles transactions and I end up cleaning up the mess. And linking my bank account to a brand-new app from one solo developer with zero reviews feels risky.",
+  "would_change_my_mind": "Using the free version for a month and finding it got my spends right without me fixing anything, plus seeing real reviews from people like me.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

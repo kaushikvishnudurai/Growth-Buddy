@@ -1,0 +1,37 @@
+{
+  "business": "Growth Buddy, a low-effort money-and-habits coach app for India",
+  "target": "Salaried 22 to 30 year olds in Indian metros (Bengaluru, Pune, Hyderabad, Chennai, Mumbai, NCR) who feel their salary disappears and want to improve their lifestyle without maintaining trackers",
+  "where": "India, online (Android first, also iPhone and web)",
+  "age": [22, 30],
+  "segments": [
+    {"name": "Fresher / early-career", "share": 0.45, "income": [400000, 800000]},
+    {"name": "Mid-level IT / corporate", "share": 0.40, "income": [800000, 1800000]},
+    {"name": "High earner", "share": 0.15, "income": [1800000, 3500000]}
+  ],
+  "behaviours": [
+    {"name": "Tracks nothing", "share": 0.25, "how": "Checks the bank balance and UPI history when money feels short; has never kept a budget."},
+    {"name": "Spreadsheet tracker", "share": 0.12, "how": "Keeps a Google Sheet or Excel of expenses, updated at month end when they remember."},
+    {"name": "Tried and quit apps", "share": 0.18, "how": "Has installed two or three expense or habit apps (Walnut/axio, Money Manager, a habit tracker) and stopped within weeks."},
+    {"name": "Uses a free AA app already", "share": 0.12, "how": "Has Fold, CRED Money, INDmoney or Jupiter linked and looks at it now and then."},
+    {"name": "Privacy-wary", "share": 0.10, "how": "Will not link a bank account or give SMS access to an app they do not know."},
+    {"name": "Free-only", "share": 0.13, "how": "Pays for Netflix or Prime at most; never pays for a utility app and looks for the free version."},
+    {"name": "Self-improvement content fan", "share": 0.10, "how": "Watches productivity and finance YouTube, buys books like Atomic Habits, starts new routines on Mondays."}
+  ],
+  "objections": [
+    "Fold, CRED and INDmoney already show my spends for free",
+    "Auto-tracking apps miss or duplicate transactions and I end up fixing them",
+    "I do not want to link my bank account to an unknown app",
+    "I have quit every tracker I tried within two weeks",
+    "One app for money, habits, health and food sounds cluttered",
+    "I would not pay for an expense tracker",
+    "Will it be around in a year, and is my data safe with a solo developer?"
+  ],
+  "habits": [
+    "you pay for almost everything by UPI on PhonePe or GPay",
+    "your salary lands on the 1st and is mostly gone by the 20th",
+    "you order food on Swiggy or Zomato three or four times a week",
+    "you live in a shared flat or PG and split bills on Splitwise",
+    "you keep meaning to start going to the gym",
+    "you spend an hour on WhatsApp and Instagram every evening"
+  ]
+}

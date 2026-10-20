@@ -1,0 +1,13 @@
+{
+  "id": "P003",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The main thing it does for free is link my bank, and I'm not handing my account data to a brand-new app from one developer that nobody has reviewed. Without the bank link it's just another tracker I have to type into, and I've already quit two or three of those.",
+  "objection": "I do not want to link my bank account to an unknown app with no reviews. If one solo developer gets hacked or shuts down, what happens to my data?",
+  "would_change_my_mind": "A friend I trust using it for a few months and showing me it actually filled in their spends on its own, plus real reviews and a clear statement of what data it keeps and who can see it.",
+  "price_too_cheap": 29,
+  "price_cheap": 79,
+  "price_expensive": 199,
+  "price_too_expensive": 349
+}

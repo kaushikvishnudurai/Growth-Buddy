@@ -1,0 +1,13 @@
+{
+  "id": "P020",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'm not linking my bank account to a brand-new app from a solo developer with zero reviews. My Excel sheet is clunky but it's mine, and the free tier would be all I'd try anyway. Habits, food photos and an AI coach aren't things I'd pay for.",
+  "objection": "Handing my bank data to an unknown app through Account Aggregator, and the thing turning into a cluttered do-everything app I stop opening after two weeks.",
+  "would_change_my_mind": "A few months of solid reviews from people like me, plus the free auto-tracking actually replacing my month-end spreadsheet without me fixing half the entries.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

@@ -1,0 +1,13 @@
+{
+  "id": "P007",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "The only part that would make me stick with it is the bank auto-fill, and I'm not linking my bank to a brand-new app from one developer with zero reviews. Without that it's another tracker where I type stuff in, and I've quit every one of those inside two weeks.",
+  "objection": "Who is this one person, and where does my bank and spending data actually go? If the app shuts down or gets breached, there's no company I can hold responsible.",
+  "would_change_my_mind": "If it could fill itself from my PhonePe/GPay UPI history without me linking my bank or giving SMS access, plus a few months of real reviews from people like me, I'd try the free version, and maybe Pro after that.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

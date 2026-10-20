@@ -1,0 +1,13 @@
+{
+  "id": "P001",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "need",
+  "reason": "I've never kept a budget and I just check my UPI history when money feels tight, so I might try the free version at most. AI photo estimates and a coach chat aren't things I'd pay for, and one app for money, habits, health and food sounds cluttered.",
+  "objection": "Giving bank access through Account Aggregator to a brand-new app from one developer with zero reviews makes me uneasy, and I doubt I'd still be opening it after week two.",
+  "would_change_my_mind": "If the free version showed me, without any effort from me, exactly where my salary goes between the 1st and the 20th and that actually helped me save, I'd consider paying for Pro, as long as there were solid reviews or some proof it's safe.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

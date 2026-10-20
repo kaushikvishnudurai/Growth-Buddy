@@ -1,0 +1,13 @@
+{
+  "id": "P019",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'd maybe try the free version, but there's no way I'm linking my bank through a new solo-dev app with zero reviews. I've already quit Walnut and Money Manager in a few weeks, so paying for Pro before I know I'll stick with it makes no sense.",
+  "objection": "If one guy builds it and it shuts down or gets hacked next year, my bank data and spending history are sitting with someone I know nothing about.",
+  "would_change_my_mind": "Using the free tier for a month without dropping it, plus seeing real reviews and a clear statement of where my data is stored and that I can delete it anytime.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 99,
+  "price_too_expensive": 199
+}

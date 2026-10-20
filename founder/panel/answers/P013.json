@@ -1,0 +1,13 @@
+{
+  "id": "P013",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I might try the free version for the habit stuff, but linking my bank account to a brand-new app from one developer with zero reviews is a no for me. And I don't pay for utility apps anyway, so Pro isn't happening.",
+  "objection": "Who is this one person, and what happens to my bank data if the app shuts down next year or gets hacked? No reviews and no company behind it.",
+  "would_change_my_mind": "Lots of good Play Store reviews from people like me plus a clear privacy policy saying my bank data is never stored or sold, and even then I'd stay on free unless a friend showed me the AI coach was actually worth it.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 99,
+  "price_too_expensive": 199
+}

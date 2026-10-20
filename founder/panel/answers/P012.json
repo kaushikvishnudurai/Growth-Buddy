@@ -1,0 +1,13 @@
+{
+  "id": "P012",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'm not linking my bank account to a brand-new app from one developer with zero reviews. I might download the free version to poke around, but I'd never pay for a utility app when there's a free one.",
+  "objection": "I do not want to link my bank account to an unknown app. If one solo developer gets hacked or just disappears, my financial data goes with them.",
+  "would_change_my_mind": "Lots of real reviews from people like me, plus the free version working fully without linking my bank, so I could try it for a couple of months first.",
+  "price_too_cheap": 0,
+  "price_cheap": 29,
+  "price_expensive": 79,
+  "price_too_expensive": 149
+}

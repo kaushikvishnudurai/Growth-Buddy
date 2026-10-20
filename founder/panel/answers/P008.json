@@ -1,0 +1,13 @@
+{
+  "id": "P008",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'd probably download the free version on a Monday and try the auto-tracking, but I'm not paying Rs 99 a month for a brand-new app from one developer with zero reviews. Most of my routine apps get dropped by week three, so I'd wait and see if this one sticks first.",
+  "objection": "Linking my bank account to an unknown solo developer's app makes me nervous, and one app doing money, habits, health and food sounds cluttered. I already split bills on Splitwise and the AI coach feels like a ChatGPT wrapper.",
+  "would_change_my_mind": "Using the free version for a month and actually seeing where my salary goes without typing much, plus a few real reviews or a YouTuber I follow vouching for the bank-linking being safe.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

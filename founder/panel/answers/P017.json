@@ -1,0 +1,13 @@
+{
+  "id": "P017",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'd maybe try the free part out of curiosity, but I'm not linking my bank account to a brand new app from one developer with zero reviews. And I'm definitely not paying for Pro before I even know if I'll open it after the first week.",
+  "objection": "My bank data sitting with a solo developer, with nobody I can go to if something leaks or the app just shuts down in six months.",
+  "would_change_my_mind": "A friend I trust using it for a few months and saying it actually showed them where their salary goes, plus clear proof the bank link is read-only through a registered Account Aggregator and that I can delete everything any time.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

@@ -1,0 +1,13 @@
+{
+  "id": "P015",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I'd probably download the free version on a Monday and try the habits part, but I'm not linking my bank to a brand-new app from one developer with zero reviews, and without that the money side is just another tracker I'll stop typing into. I wouldn't pay for Pro until it had proven itself for a few weeks.",
+  "objection": "I do not want to link my bank account to an unknown app. Account Aggregator sounds official, but who is actually holding my transaction data, and what happens to it if the solo developer shuts down or gets hacked?",
+  "would_change_my_mind": "Seeing it work fully without bank linking (WhatsApp one-line entries alone being good enough), plus a few thousand real Play Store reviews or a creator I follow vouching for it.",
+  "price_too_cheap": 29,
+  "price_cheap": 59,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

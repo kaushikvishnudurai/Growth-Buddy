@@ -1,0 +1,13 @@
+{
+  "id": "P018",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "trust",
+  "reason": "I already have INDmoney and Fold pulling my bank data for free, so linking my account again to a brand-new app from one developer with zero reviews feels like risk for not much gain. I might try the free tier someday, but I would not pay for Pro now.",
+  "objection": "Who is actually holding my bank data, and what happens to it if this solo developer shuts the app down in six months?",
+  "would_change_my_mind": "A few months of real reviews plus a clear, simple privacy page showing it is a registered AA user with data deletion on request, and the WhatsApp one-line entry working well enough that it also replaces my Splitwise hassle.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 149,
+  "price_too_expensive": 299
+}

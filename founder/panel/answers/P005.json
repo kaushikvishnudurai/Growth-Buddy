@@ -1,0 +1,13 @@
+{
+  "id": "P005",
+  "buys": false,
+  "purchases_first_month": 0,
+  "reason_code": "habit",
+  "reason": "I've already installed Walnut, Money Manager and a habit tracker and dropped all of them within a few weeks, so I'm not paying for another one. At most I'd try the free version, and honestly one app for money, habits, health and food sounds cluttered to me.",
+  "objection": "I never stick with these apps, and a brand new app from one developer with zero reviews asking to link my bank account makes me nervous.",
+  "would_change_my_mind": "If I used the free version for a month without quitting and the auto bank sync actually showed me where my salary goes, then Rs 99 for the AI photo stuff might be worth it.",
+  "price_too_cheap": 19,
+  "price_cheap": 49,
+  "price_expensive": 99,
+  "price_too_expensive": 199
+}
