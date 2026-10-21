@@ -580,6 +580,17 @@ CREATE TABLE IF NOT EXISTS `idempotency_keys` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
+-- Operator feature locks (user/FeatureLocks; user_id '*' = everyone). A new table,
+-- so a guarded CREATE; DataSeeder also creates it on boot. Same as tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS `feature_locks` (
+  `user_id` varchar(36) NOT NULL,
+  `feature` varchar(32) NOT NULL,
+  `reason` varchar(200) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`,`feature`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
 -- A snooze is claimed with a 'pending' dispatch-log row and rung again by the
 -- sweeper if its instance dies before marking it 'sent' (ReminderDeliveryScheduler
 -- .resendStuckSnoozes). snooze_of: the reminder a snooze row rings (NULL on an

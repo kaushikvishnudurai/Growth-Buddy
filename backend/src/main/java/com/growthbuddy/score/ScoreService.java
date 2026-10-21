@@ -1,5 +1,6 @@
 package com.growthbuddy.score;
 
+import com.growthbuddy.user.FeatureLocks;
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
@@ -49,8 +50,7 @@ public class ScoreService {
     /** Same rule as the client's featureOn: only an explicit false turns it off. */
     private boolean habitsOn(UUID userId) {
         return users.findById(userId)
-                .map(u -> u.getFeaturePrefs() == null
-                        || !Boolean.FALSE.equals(u.getFeaturePrefs().get("habits")))
+                .map(u -> FeatureLocks.on(u, "habits"))
                 .orElse(true);
     }
 

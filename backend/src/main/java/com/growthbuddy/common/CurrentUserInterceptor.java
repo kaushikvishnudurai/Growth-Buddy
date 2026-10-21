@@ -25,6 +25,9 @@ public class CurrentUserInterceptor implements AsyncHandlerInterceptor {
      * a valid bearer token. We deny by default so a new endpoint doesn't
      * accidentally end up public.
      */
+    /** The operator portal. Its visitors get a 404, not a 401 (see {@link #unauthenticated}). */
+    private static final String ADMIN_PREFIX = "/api/admin";
+
     private static final Set<String> ANONYMOUS_PATHS = Set.of(
             "/api/auth/signup",
             "/api/auth/login",
@@ -67,15 +70,25 @@ public class CurrentUserInterceptor implements AsyncHandlerInterceptor {
         }
         String header = request.getHeader("Authorization");
         if (header == null || !header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return deny(response, "Missing bearer token");
+            return unauthenticated(response, path, "Missing bearer token");
         }
         String token = header.substring(7).trim();
         var userId = sessions.resolve(token);
         if (userId.isEmpty()) {
-            return deny(response, "Invalid or expired session");
+            return unauthenticated(response, path, "Invalid or expired session");
         }
         CurrentUser.set(userId.get());
         return true;
+    }
+
+    /** 401 for the app. Under /api/admin a visitor gets a 404 instead, so the portal isn't even announced. */
+    private boolean unauthenticated(HttpServletResponse response, String path, String message)
+            throws java.io.IOException {
+        if (path.equals(ADMIN_PREFIX) || path.startsWith(ADMIN_PREFIX + "/")) {
+            response.setStatus(HttpStatus.NOT_FOUND.value());
+            return false;
+        }
+        return deny(response, message);
     }
 
     private boolean deny(HttpServletResponse response, String message) throws java.io.IOException {

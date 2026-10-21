@@ -143,6 +143,17 @@ public class DataSeeder implements CommandLineRunner {
                     index ix_idempotency_created (created_at)
                 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci
                 """).executeUpdate();
+
+        // FeatureLocks' table, plain JDBC too.
+        em.createNativeQuery("""
+                create table if not exists feature_locks (
+                    user_id varchar(36) not null,
+                    feature varchar(32) not null,
+                    reason varchar(200) null,
+                    created_at datetime(6) not null,
+                    primary key (user_id, feature)
+                ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci
+                """).executeUpdate();
     }
 
     private void seedDemoUser() {

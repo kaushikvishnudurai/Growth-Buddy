@@ -1,5 +1,6 @@
 package com.growthbuddy.food;
 
+import com.growthbuddy.user.FeatureLocks;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
@@ -545,7 +546,7 @@ public class FoodWeek {
      * an unknown user reads as on, the same default.
      */
     static boolean waterOn(User u) {
-        return u == null || u.getFeaturePrefs() == null || !Boolean.FALSE.equals(u.getFeaturePrefs().get("water"));
+        return u == null || FeatureLocks.on(u, "water");
     }
 
     /**

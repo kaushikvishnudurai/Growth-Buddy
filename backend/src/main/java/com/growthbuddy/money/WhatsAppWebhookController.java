@@ -1,5 +1,6 @@
 package com.growthbuddy.money;
 
+import com.growthbuddy.user.FeatureLocks;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
@@ -199,6 +200,10 @@ public class WhatsAppWebhookController {
             return;
         }
         for (User user : senders(from)) {
+            if (FeatureLocks.isLocked(user.getId(), "calendar")) {
+                say(user, "Reminders are turned off for your account.");
+                continue;
+            }
             // Reminder ids are per-account, so only the owner's comes back with a time.
             snoozes.snoozeFromWhatsApp(user, id, null).ifPresent(at -> confirm(user, at));
         }
@@ -212,6 +217,10 @@ public class WhatsAppWebhookController {
         }
         Integer minutes = m.group(1) == null ? null : Integer.valueOf(m.group(1));
         for (User user : senders(from)) {
+            if (FeatureLocks.isLocked(user.getId(), "calendar")) {
+                say(user, "Reminders are turned off for your account.");
+                continue;
+            }
             Optional<Instant> at = minutes != null && (minutes < 1 || minutes > 240)
                     ? Optional.empty()
                     : snoozes.snoozeLatestFromWhatsApp(user, minutes);
@@ -244,7 +253,7 @@ public class WhatsAppWebhookController {
             List<String> lines;
             try {
                 var parsed = quickAdd.parse(clean, applier.habitNames(user.getId()), today, LocalTime.now(zone));
-                lines = applier.apply(user.getId(), user.getFeaturePrefs(), parsed.intents(), today);
+                lines = applier.apply(user.getId(), FeatureLocks.effective(user), parsed.intents(), today);
             } catch (ApiException ex) {
                 say(user, ex.getMessage());
                 continue;

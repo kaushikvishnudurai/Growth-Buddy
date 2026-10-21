@@ -29,6 +29,11 @@ public final class CurrentUser {
         return id;
     }
 
+    /** The user, or null on an anonymous route (a push's Done link, a webhook). */
+    public static UUID idOrNull() {
+        return HOLDER.get();
+    }
+
     public static void clear() {
         HOLDER.remove();
     }

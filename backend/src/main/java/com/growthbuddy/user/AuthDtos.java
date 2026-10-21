@@ -191,6 +191,8 @@ record AuthUserResponse(
         int xpPerLevel,
         boolean emailVerified,
         Map<String, Boolean> features,
+        // Operator-locked (FeatureLocks): also false in features; the switch can't turn them on.
+        java.util.Set<String> lockedFeatures,
         String digestFrequency,
         int digestHour,
         List<HomeLayoutItem> homeLayout,
@@ -218,7 +220,8 @@ record AuthUserResponse(
                 ProgressService.xpIntoLevel(user.getXpTotal()),
                 ProgressService.xpForNextLevel(user.getXpTotal()),
                 ProgressService.XP_PER_LEVEL, user.isEmailVerified(),
-                user.getFeaturePrefs(), user.getDigestFrequency(), user.getDigestHour(),
+                FeatureLocks.effective(user), FeatureLocks.lockedFor(user.getId()),
+                user.getDigestFrequency(), user.getDigestHour(),
                 user.getHomeLayout(), user.getNavLayout(), user.getUiPrefs(), token);
     }
 }

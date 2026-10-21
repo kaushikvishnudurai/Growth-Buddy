@@ -28,6 +28,7 @@ public class WebConfig implements WebMvcConfigurer {
     private final AiRateLimitInterceptor aiRateLimitInterceptor;
     private final IdempotencyInterceptor idempotencyInterceptor;
     private final DataChangedInterceptor dataChangedInterceptor;
+    private final FeatureLockInterceptor featureLockInterceptor;
     private final String allowedOrigins;
 
     public WebConfig(CurrentUserInterceptor currentUserInterceptor,
@@ -35,12 +36,14 @@ public class WebConfig implements WebMvcConfigurer {
                      AiRateLimitInterceptor aiRateLimitInterceptor,
                      IdempotencyInterceptor idempotencyInterceptor,
                      DataChangedInterceptor dataChangedInterceptor,
+                     FeatureLockInterceptor featureLockInterceptor,
                      @Value("${growthbuddy.cors.allowed-origins}") String allowedOrigins) {
         this.currentUserInterceptor = currentUserInterceptor;
         this.rateLimitInterceptor   = rateLimitInterceptor;
         this.aiRateLimitInterceptor = aiRateLimitInterceptor;
         this.idempotencyInterceptor = idempotencyInterceptor;
         this.dataChangedInterceptor = dataChangedInterceptor;
+        this.featureLockInterceptor = featureLockInterceptor;
         this.allowedOrigins         = allowedOrigins;
     }
 
@@ -56,6 +59,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(currentUserInterceptor).addPathPatterns("/api/**");
+        // An operator-locked feature takes no writes. Before idempotency, or the 403 is stored as
+        // the key's answer and replayed after the unlock; before the AI limiter, so it isn't charged.
+        registry.addInterceptor(featureLockInterceptor).addPathPatterns("/api/**");
         // Second, on purpose: it needs the user CurrentUserInterceptor just set, and
         // it must answer a replay before the AI limiter below charges for it.
         // (IdempotencyFilter captures the response; it only acts on keyed writes.)

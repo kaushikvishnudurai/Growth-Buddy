@@ -968,6 +968,110 @@ function securitySection() {
   ];
 }
 
+/* ---- Operator: feature locks (/api/admin/feature-locks) ----
+   Only an account on the AdminAccess list (user/AdminAccess.java) can read the list.
+   Anyone else gets a 404, so this stays an empty box and nobody sees the section. */
+function operatorSection() {
+  const wrap = h('div', { class: 'gb-operator' });
+  const featureName = (key) => (FEATURE_DEFS.find((f) => f.key === key) || { label: key }).label;
+
+  const featureSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Feature' },
+    ...FEATURE_DEFS.map((f) => h('option', { value: f.key }, f.label))
+  );
+  const emailIn = h('input', {
+    class: 'gb-input',
+    type: 'email',
+    placeholder: 'Leave blank for everyone',
+    autocomplete: 'off',
+  });
+  const reasonIn = h('input', { class: 'gb-input', maxlength: '200', placeholder: 'Reason (optional)' });
+  const lockBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Lock feature');
+
+  async function lock() {
+    const email = emailIn.value.trim();
+    lockBtn.disabled = true;
+    try {
+      paint(
+        await api('/api/admin/feature-locks', {
+          method: 'PUT',
+          body: JSON.stringify({
+            feature: featureSel.value,
+            email: email || null,
+            reason: reasonIn.value.trim() || null,
+          }),
+        })
+      );
+      emailIn.value = '';
+      reasonIn.value = '';
+      const who = email || 'everyone';
+      toastSuccess(featureName(featureSel.value) + ' locked for ' + who + '.');
+    } catch (err) {
+      toastError(err, 'Could not lock that feature.');
+    } finally {
+      lockBtn.disabled = false;
+    }
+  }
+  lockBtn.addEventListener('click', lock);
+
+  // No email = the everyone lock; a per-account lock on the same feature stays.
+  async function unlock(lockRow, btn) {
+    const q =
+      '?feature=' + encodeURIComponent(lockRow.feature) +
+      (lockRow.email ? '&email=' + encodeURIComponent(lockRow.email) : '');
+    btn.disabled = true;
+    try {
+      paint(await api('/api/admin/feature-locks' + q, { method: 'DELETE' }));
+      toastSuccess(featureName(lockRow.feature) + ' unlocked.');
+    } catch (err) {
+      btn.disabled = false;
+      toastError(err, 'Could not lift that lock.');
+    }
+  }
+
+  const row = (l) => {
+    const btn = h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact' },
+      'Unlock'
+    );
+    btn.addEventListener('click', () => unlock(l, btn));
+    return h(
+      'div',
+      { class: 'gb-sec-row' },
+      h(
+        'div',
+        { class: 'gb-sec-row-main' },
+        h('div', { class: 'gb-sec-row-device' }, featureName(l.feature)),
+        h(
+          'div',
+          { class: 'gb-sec-row-meta' },
+          (l.email || 'Everyone') + (l.reason ? ' · ' + l.reason : '')
+        )
+      ),
+      btn
+    );
+  };
+
+  function paint(list) {
+    wrap.replaceChildren(
+      h('h3', { class: 'gb-settings-sec-label' }, 'Operator'),
+      h(
+        'div',
+        { class: 'gb-field-hint' },
+        'Switch a feature off for one account, or for everyone. It disappears from the app and its writes are refused.'
+      ),
+      ...(list.length ? list.map(row) : [h('div', { class: 'gb-empty-sm' }, 'No features are locked.')]),
+      h('label', { class: 'gb-field-label gb-field-label--sub' }, 'Lock a feature'),
+      h('div', { class: 'gb-form' }, featureSel, emailIn, reasonIn, lockBtn)
+    );
+  }
+
+  api('/api/admin/feature-locks').then(paint).catch(() => {});
+  return wrap;
+}
+
 /* Copy text, toasting the result. The secret and the recovery codes are the
    two things here that are useless unless they leave the screen intact. */
 function copyText(text, what) {
@@ -3175,6 +3279,7 @@ function openProfileSettings(initialTab) {
     ),
     downloadDataButton(),
     ...securitySection(),
+    operatorSection(),
     h('h3', { class: 'gb-settings-sec-label' }, 'Danger zone'),
     h(
       'div',

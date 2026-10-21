@@ -11838,6 +11838,8 @@ async function setFeature(key, value) {
 /* One feature's on/off row (Settings › Layout), with its rollback-on-failure. */
 function featureSwitchRow(def) {
   const isOn = () => featureOn(def.key);
+  // Switched off by an operator (server FeatureLocks): /me already reports it off; show why, no tap.
+  const locked = ((state.user && state.user.lockedFeatures) || []).includes(def.key);
   const sw = h(
     'button',
     {
@@ -11846,6 +11848,7 @@ function featureSwitchRow(def) {
       'aria-checked': isOn() ? 'true' : 'false',
       'aria-label': def.label,
       class: 'gb-switch' + (isOn() ? ' is-on' : ''),
+      disabled: locked,
     },
     h('span', { class: 'gb-switch-knob' })
   );
@@ -11868,7 +11871,7 @@ function featureSwitchRow(def) {
       'div',
       { class: 'gb-feature-row-text' },
       h('div', { class: 'gb-feature-row-label' }, def.label),
-      h('div', { class: 'gb-feature-row-desc' }, def.desc)
+      h('div', { class: 'gb-feature-row-desc' }, locked ? 'Turned off for your account by Growth Buddy.' : def.desc)
     ),
     sw
   );

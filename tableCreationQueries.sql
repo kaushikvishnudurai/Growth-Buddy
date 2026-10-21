@@ -1254,3 +1254,15 @@ CREATE TABLE IF NOT EXISTS `health_readings` (
   KEY `ix_health_user_type_day` (`user_id`,`type`,`day`),
   CONSTRAINT `fk_health_readings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Operator kill switches (user/FeatureLocks, set through /api/admin/feature-locks):
+-- a feature switched off for one account, or for every account when user_id is '*'.
+-- Beats the user's own switch in users.feature_prefs. Plain JDBC; DataSeeder creates
+-- it on boot too. No FK: '*' is not a user.
+CREATE TABLE IF NOT EXISTS `feature_locks` (
+  `user_id` varchar(36) NOT NULL,
+  `feature` varchar(32) NOT NULL,
+  `reason` varchar(200) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`,`feature`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

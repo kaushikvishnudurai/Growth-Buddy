@@ -137,6 +137,7 @@ public class ReminderController {
     public void doneByLink(@Valid @RequestBody SnoozeLinkRequest req) {
         SnoozeLinks.Ticket t = snoozes.ticketFor(SnoozeLinks.DONE, req.token()).filter(x -> x.day() != null)
                 .orElseThrow(() -> com.growthbuddy.common.ApiException.notFound("Reminder"));
+        com.growthbuddy.user.FeatureLocks.refuseIfLocked(t.userId(), "calendar"); // no signed-in user here
         com.growthbuddy.common.DataChangedInterceptor.forUser(t.userId()); // the open app reloads
         try {
             service.setDone(t.userId(), t.targetId(), t.day(), true);
@@ -147,8 +148,10 @@ public class ReminderController {
 
     @PostMapping("/snooze-link")
     public java.util.Map<String, java.time.Instant> snoozeByLink(@Valid @RequestBody SnoozeLinkRequest req) {
-        snoozes.ticketFor(SnoozeLinks.SNOOZE, req.token())
-                .ifPresent(t -> com.growthbuddy.common.DataChangedInterceptor.forUser(t.userId()));
+        snoozes.ticketFor(SnoozeLinks.SNOOZE, req.token()).ifPresent(t -> {
+            com.growthbuddy.user.FeatureLocks.refuseIfLocked(t.userId(), "calendar"); // no signed-in user here
+            com.growthbuddy.common.DataChangedInterceptor.forUser(t.userId());
+        });
         return snoozes.snoozeByLink(req.token())
                 .map(at -> java.util.Map.of("snoozedUntil", at))
                 .orElseThrow(() -> com.growthbuddy.common.ApiException.notFound("Reminder"));

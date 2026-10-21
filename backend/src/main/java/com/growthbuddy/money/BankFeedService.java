@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.user.FeatureLocks;
 import com.growthbuddy.user.UserClock;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -213,6 +214,10 @@ public class BankFeedService {
         List<Map<String, Object>> found = jdbc.queryForList(
                 "SELECT * FROM bank_feed_consents WHERE consent_id = ?", consentId);
         for (Map<String, Object> row : found) {
+            // Anonymous webhook: the consent's owner decides, as a signed-in write would.
+            if (FeatureLocks.isLocked(UUID.fromString(String.valueOf(row.get("user_id"))), "money")) {
+                continue;
+            }
             try {
                 String type = body.path("type").asText("");
                 if ("CONSENT_STATUS_UPDATE".equals(type)) {

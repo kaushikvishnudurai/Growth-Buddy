@@ -2472,6 +2472,10 @@ body:has(.is-thinking, .gb-thinking)::after {
   background: var(--brand-fill);
   box-shadow: none;
 }
+.gb-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 .gb-switch-knob {
   position: absolute;
   top: 3px;
