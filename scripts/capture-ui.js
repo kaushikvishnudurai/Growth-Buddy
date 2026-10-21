@@ -255,7 +255,7 @@ export function CaptureSection(ctx, { heading = true } = {}) {
       return {
         status: lastSeenLine(src, 'Set up on your iPhone, then send yourself a test'),
         toggle: true,
-        fix: 'Set up',
+        fix: where === 'ios' || where === 'ios-web' ? 'Set up' : null,
       };
     return { status: lastSeenLine(src, 'On. Nothing read yet'), toggle: true };
   }
@@ -309,10 +309,9 @@ export function CaptureSection(ctx, { heading = true } = {}) {
   }
 
   function shareRow() {
-    const can = where === 'android' || where === 'android-web';
     return h(
       'div',
-      { class: 'gb-cap-row' + (can ? '' : ' is-unavailable') },
+      { class: 'gb-cap-row' },
       h('span', { class: 'gb-cap-row-ic' }, Icon('share-2', { size: 18 })),
       h(
         'div',
@@ -321,21 +320,22 @@ export function CaptureSection(ctx, { heading = true } = {}) {
         h(
           'div',
           { class: 'gb-cap-row-status' },
-          can
-            ? 'Long-press a bank SMS, tap Share, then Growth Buddy. Nothing to switch on.'
-            : where === 'web'
-              ? 'On an Android phone, from the app or the installed web app'
-              : 'On Android. On an iPhone, use the Shortcut above'
+          'Long-press a bank SMS, tap Share, then Growth Buddy. Nothing to switch on.'
         )
       )
     );
   }
 
+  /* Only what this device can set up: Android gets its alerts, SMS and Share,
+     an iPhone gets the Shortcut, a computer nothing. A source already on shows
+     anywhere, so it can still be switched off from here. */
   function paint() {
-    const order =
-      where === 'ios' || where === 'ios-web' ? ['ios', 'notif', 'sms'] : ['notif', 'sms', 'ios'];
+    const ios = where === 'ios' || where === 'ios-web';
+    const web = where === 'web';
+    const here = ios ? ['ios'] : web ? [] : ['notif', 'sms'];
+    const order = ['notif', 'sms', 'ios'].filter((s) => here.includes(s) || isOn(s));
     const rows = order.map(sourceRow);
-    rows.splice(where === 'ios' || where === 'ios-web' ? 1 : 2, 0, shareRow());
+    if (!ios && !web) rows.push(shareRow());
     const rupees = !server || server.rupees !== false;
     box.replaceChildren(
       ...[
@@ -355,7 +355,14 @@ export function CaptureSection(ctx, { heading = true } = {}) {
               { class: 'gb-cap-note' },
               'Automatic capture reads rupee amounts. Set Money’s currency to ₹ to use it.'
             ),
-        h('div', { class: 'gb-cap-rows' + (rupees ? '' : ' is-off') }, rows),
+        web
+          ? h(
+              'p',
+              { class: 'gb-cap-note' },
+              'Set this up from Growth Buddy on your phone: Android reads bank alerts and SMS, an iPhone uses a Shortcut.'
+            )
+          : null,
+        rows.length ? h('div', { class: 'gb-cap-rows' + (rupees ? '' : ' is-off') }, rows) : null,
       ].filter(Boolean)
     );
     refreshIcons();
@@ -524,15 +531,16 @@ export function CaptureSection(ctx, { heading = true } = {}) {
     );
   }
 
+  // One grid cell per step, or the li's grid splits its text runs into columns.
+  const step = (...kids) => h('li', null, h('div', null, ...kids));
+
   function openShortcutSetup(token) {
     const url = publicSiteUrl() + '/api/capture/ios/message';
     const steps = h(
       'ol',
       { class: 'gb-cap-steps' },
       SHORTCUT_LINK
-        ? h(
-            'li',
-            null,
+        ? step(
             h('strong', null, 'Add the Shortcut. '),
             'It opens in the Shortcuts app and asks for your key.',
             h(
@@ -546,23 +554,17 @@ export function CaptureSection(ctx, { heading = true } = {}) {
               'Get “Send to Growth Buddy”'
             )
           )
-        : h(
-            'li',
-            null,
+        : step(
             h('strong', null, 'Make the Shortcut. '),
             'In Shortcuts, tap +, add “Get Contents of URL”, and set: the URL below, Method POST, a header X-Capture-Token with your key, and Request Body JSON with one field ',
             h('code', null, 'text'),
             ' set to Shortcut Input.'
           ),
-      h(
-        'li',
-        null,
+      step(
         h('strong', null, 'Make the automation. '),
         'Automation, +, Message. Message Contains “debited”, then choose Run Immediately and run the Shortcut. Add a second one for “credited” if you want money in too.'
       ),
-      h(
-        'li',
-        null,
+      step(
         h('strong', null, 'Test it. '),
         'The next bank SMS shows up in Money. The row here says when the last one arrived.'
       )
