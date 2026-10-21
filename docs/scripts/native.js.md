@@ -110,3 +110,13 @@ ponytail: local only — server-initiated pushes to the app need FCM + `@capacit
 (`requestCamera` -> granted / prompt / blocked, `openSettings`). `installCameraGate()` (app.js boot,
 phone app only) holds every `<input type=file capture>` click, asks again, and on "blocked" offers
 the app's settings page; the barcode scanner calls `cameraAskAgain()` after a NotAllowedError.
+
+## Money's automatic capture (`capturePlugin`, `onSharedText`)
+
+`capturePlugin()` = `nativePlugin('GbCapture')` (Android only, `com.growthbuddy.capture` in the mobile
+repo; null on the web, iOS and an APK without it). Methods: `status()` `{notifAccess, smsAvailable,
+smsGranted, notif, sms}`, `setSources({notif, sms})` (the native side stops queueing what is off and
+drops what it queued), `openNotificationAccess()`, `requestSms()` (false in a build without the SMS
+permissions), `peek()` / `ack({ids})` (the queue of payment-looking texts, kept until the server took
+them), `readSmsInbox({sinceMs})`, `takeShared()`. `onSharedText(cb)` listens for its `shared` event
+(text shared in while the app was open). The text is parsed by bank-msg.js and never sent.

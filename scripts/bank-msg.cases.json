@@ -1,0 +1,228 @@
+{
+  "_comment": [
+    "The one list of bank and UPI message cases BOTH readers are tested against:",
+    "scripts/bank-msg.test.mjs (scripts/bank-msg.js, on the phone) and",
+    "BankMessageParserTest (money/capture/BankMessageParser.java, the iPhone path).",
+    "Add a case here and both sides have to satisfy it.",
+    "",
+    "Every sample is ANONYMISED: account digits, reference numbers, names, VPAs,",
+    "phone numbers and balances are invented. The wording follows each bank's real",
+    "format. The notification ones (source 'notif') follow what the apps show today",
+    "as far as known; confirm them on a phone and fix the wording here if one differs.",
+    "",
+    "expect null = not a transaction (nothing is captured). Otherwise every key in",
+    "expect is compared; a key left out is not checked."
+  ],
+  "cases": [
+    {
+      "name": "HDFC UPI sent (multi-line)",
+      "source": "sms",
+      "text": "Sent Rs.250.00\nFrom HDFC Bank A/C *1234\nTo SWIGGY\nOn 20/10/26\nRef 629312345678\nNot You?\nCall 18002586161/SMS BLOCK UPI to 7308080808",
+      "expect": { "kind": "debit", "amount": 250, "merchant": "Swiggy", "last4": "1234", "ref": "629312345678", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "HDFC card spend",
+      "source": "sms",
+      "text": "Spent Rs.1,499.00 On HDFC Bank Card 5678 At AMAZON PAY INDIA On 2026-10-20:14:03:11 Not You? To Block+Reissue Call 18002586161/SMS BLOCK CC 5678 to 7308080808",
+      "expect": { "kind": "debit", "amount": 1499, "merchant": "Amazon Pay India", "last4": "5678", "ref": null, "date": "2026-10-20", "channel": "card", "confidence": "high" }
+    },
+    {
+      "name": "HDFC UPI credit from a VPA",
+      "source": "sms",
+      "text": "Credit Alert!\nRs.5000.00 credited to HDFC Bank A/c XX1234 on 20-10-26 from VPA ravi.k@okaxis (UPI 629398765432)",
+      "expect": { "kind": "credit", "amount": 5000, "merchant": "Ravi K", "last4": "1234", "ref": "629398765432", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "ICICI UPI debit, payee before 'credited'",
+      "source": "sms",
+      "text": "ICICI Bank Acct XX123 debited for Rs 450.00 on 20-Oct-26; ZOMATO credited. UPI:629311112222. Call 18002662 for dispute. SMS BLOCK 123 to 9215676766.",
+      "expect": { "kind": "debit", "amount": 450, "merchant": "Zomato", "last4": "123", "ref": "629311112222", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "ICICI credit card spend, limit not read as the amount",
+      "source": "sms",
+      "text": "INR 2,340.00 spent using ICICI Bank Card XX4321 on 20-Oct-26 on FLIPKART. Avl Limit: INR 1,23,456.00. If not you, call 1800 2662/SMS BLOCK 4321 to 9215676766",
+      "expect": { "kind": "debit", "amount": 2340, "merchant": "Flipkart", "last4": "4321", "ref": null, "date": "2026-10-20", "channel": "card", "confidence": "high" }
+    },
+    {
+      "name": "SBI UPI debit with no currency word",
+      "source": "sms",
+      "text": "Dear UPI user A/C X5678 debited by 120.0 on date 20Oct26 trf to CHAI POINT Refno 629355556666 If not u? call 1800111109. -SBI",
+      "expect": { "kind": "debit", "amount": 120, "merchant": "Chai Point", "last4": "5678", "ref": "629355556666", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "SBI credit from a person",
+      "source": "sms",
+      "text": "Dear SBI User, your A/c X5678-credited by Rs.1500 on 20Oct26 transfer from RAVI KUMAR Ref No 629377778888 -SBI",
+      "expect": { "kind": "credit", "amount": 1500, "merchant": "Ravi Kumar", "last4": "5678", "ref": "629377778888", "date": "2026-10-20", "confidence": "high" }
+    },
+    {
+      "name": "Axis UPI debit (multi-line, payee in the UPI path)",
+      "source": "sms",
+      "text": "INR 899.00 debited\nA/c no. XX9012\n20-10-26, 18:22:05\nUPI/P2M/629312121212/BIGBASKET\nNot you? SMS BLOCKUPI Cust ID to 919951860002\nAxis Bank",
+      "expect": { "kind": "debit", "amount": 899, "merchant": "Bigbasket", "last4": "9012", "ref": "629312121212", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "Axis card spend (multi-line, payee on the line after the time)",
+      "source": "sms",
+      "text": "Spent\nCard no. XX3456\nINR 650\n20-10-26 13:45:10\nUBER INDIA\nAvl Lmt INR 85,000\nSMS BLOCK 3456 to 919951860002, if not you - Axis Bank",
+      "expect": { "kind": "debit", "amount": 650, "merchant": "Uber India", "last4": "3456", "ref": null, "date": "2026-10-20", "channel": "card", "confidence": "high" }
+    },
+    {
+      "name": "Kotak UPI sent to a VPA",
+      "source": "sms",
+      "text": "Sent Rs.300.00 from Kotak Bank AC X7890 to rapido@ybl on 20-10-26.UPI Ref 629323232323. Not you, https://kotak.com/KBANKT/Fraud",
+      "expect": { "kind": "debit", "amount": 300, "merchant": "Rapido", "last4": "7890", "ref": "629323232323", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "Kotak UPI received",
+      "source": "sms",
+      "text": "Received Rs.2000.00 in your Kotak Bank AC X7890 from priya.s@oksbi on 20-10-26.UPI Ref:629334343434.",
+      "expect": { "kind": "credit", "amount": 2000, "merchant": "Priya S", "last4": "7890", "ref": "629334343434", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "PNB UPI debit, no payee named",
+      "source": "sms",
+      "text": "A/c XX4567 debited INR 500.00 Dt 20-10-26 14:10:33 thru UPI:629345454545.Bal INR 12,345.67 Not u?Fwd this SMS to 9264092640 to block UPI.-PNB",
+      "expect": { "kind": "debit", "amount": 500, "merchant": null, "last4": "4567", "ref": "629345454545", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "Bank of Baroda Dr/Cr wording, QR merchant VPA, balance after",
+      "source": "sms",
+      "text": "Rs.75.00 Dr. from A/C XXXXXX2345 and Cr. to paytmqr123@paytm. Ref:629356565656. AvlBal:Rs4,321.00(2026:10:20 09:15:44). Not you? Call 18005700-BOB",
+      "expect": { "kind": "debit", "amount": 75, "merchant": null, "last4": "2345", "ref": "629356565656", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "IDFC First UPI debit",
+      "source": "sms",
+      "text": "Your A/C XXXXXXX3456 has been debited with INR 1,200.00 on 20/10/2026 towards UPI to SHOPPERS STOP, RRN 629367676767. Available balance: INR 8,765.00. Not you? Call 18001024242 - IDFC FIRST Bank",
+      "expect": { "kind": "debit", "amount": 1200, "merchant": "Shoppers Stop", "last4": "3456", "ref": "629367676767", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "Yes Bank card spend with @merchant",
+      "source": "sms",
+      "text": "INR 349.00 spent on YES BANK Card X6789 @NETFLIX 20-10-2026 08:00:01 PM Avl Lmt INR 50,000.00 SMS BLKCC 6789 to 9840909000 to block",
+      "expect": { "kind": "debit", "amount": 349, "merchant": "Netflix", "last4": "6789", "ref": null, "date": "2026-10-20", "channel": "card", "confidence": "high" }
+    },
+    {
+      "name": "Canara debit, payee in the UPI path",
+      "source": "sms",
+      "text": "An amount of INR 220.00 has been DEBITED to your account XXX890 on 20/10/2026 towards UPI/629378787878/DUNZO. Total Avail.bal INR 3,456.78 - Canara Bank",
+      "expect": { "kind": "debit", "amount": 220, "merchant": "Dunzo", "last4": "890", "ref": "629378787878", "date": "2026-10-20", "channel": "upi", "confidence": "high" }
+    },
+    {
+      "name": "Auto-debit (e-mandate) is a spend",
+      "source": "sms",
+      "text": "Rs 199.00 debited from A/c XX1234 for e-mandate towards NETFLIX on 20-10-26. Info: avoid charges, keep balance.",
+      "expect": { "kind": "debit", "amount": 199, "merchant": "Netflix", "last4": "1234", "date": "2026-10-20", "channel": "autodebit", "confidence": "high" }
+    },
+    {
+      "name": "Reversal of a failed payment is money in",
+      "source": "sms",
+      "text": "Rs.500.00 reversed to your A/c XX1234 for failed UPI txn 629399990000 on 20-10-26.",
+      "expect": { "kind": "credit", "amount": 500, "last4": "1234", "ref": "629399990000", "date": "2026-10-20", "confidence": "high" }
+    },
+    {
+      "name": "GPay notification, paid",
+      "source": "notif",
+      "text": "Payment successful\n₹250.00 paid to Chai Point",
+      "expect": { "kind": "debit", "amount": 250, "merchant": "Chai Point", "last4": null, "ref": null, "date": null, "confidence": "high" }
+    },
+    {
+      "name": "GPay notification, someone paid you",
+      "source": "notif",
+      "text": "Ravi Kumar paid you ₹500.00\nUPI transaction ID 629311223344",
+      "expect": { "kind": "credit", "amount": 500, "ref": "629311223344", "confidence": "high" }
+    },
+    {
+      "name": "PhonePe notification, paid with masked account",
+      "source": "notif",
+      "text": "Paid ₹1,200 to Shoppers Stop\nFrom HDFC Bank ••1234",
+      "expect": { "kind": "debit", "amount": 1200, "merchant": "Shoppers Stop", "last4": "1234", "confidence": "high" }
+    },
+    {
+      "name": "Paytm notification, received",
+      "source": "notif",
+      "text": "Received ₹300 from Priya S\nin your Paytm Payments Bank account",
+      "expect": { "kind": "credit", "amount": 300, "merchant": "Priya S", "confidence": "high" }
+    },
+    {
+      "name": "Shared bare sentence with nothing to tie it to a payment",
+      "source": "share",
+      "text": "Rs 150 debited",
+      "expect": { "kind": "debit", "amount": 150, "merchant": null, "last4": null, "ref": null, "confidence": "low" }
+    },
+    {
+      "name": "OTP for a card payment",
+      "source": "sms",
+      "text": "123456 is your OTP for txn of Rs 1,499.00 at AMAZON on HDFC Bank card 5678. Valid for 5 mins. Do not share.",
+      "expect": null
+    },
+    {
+      "name": "Loan offer",
+      "source": "sms",
+      "text": "Congratulations! You are eligible for a pre-approved personal loan of Rs 5,00,000. Apply now: https://example.in/x",
+      "expect": null
+    },
+    {
+      "name": "Credit card bill reminder",
+      "source": "sms",
+      "text": "Your HDFC Bank Credit Card XX5678 statement: total due Rs 12,345.00, minimum due Rs 620.00 is due on 05-11-26.",
+      "expect": null
+    },
+    {
+      "name": "Upcoming autopay notice",
+      "source": "sms",
+      "text": "Your AutoPay of Rs 199.00 for Netflix will be debited on 25-10-26 from A/c XX1234.",
+      "expect": null
+    },
+    {
+      "name": "Failed UPI payment",
+      "source": "sms",
+      "text": "Your UPI transaction of Rs 500.00 to CHAI POINT has failed. Ref 629300001111.",
+      "expect": null
+    },
+    {
+      "name": "Balance alert",
+      "source": "sms",
+      "text": "Avl bal in A/c XX1234 is Rs 10,000.00 as on 20-10-26.",
+      "expect": null
+    },
+    {
+      "name": "ATM withdrawal (cash, not spending)",
+      "source": "sms",
+      "text": "Rs.2000.00 withdrawn at ATM S1AW00123 from A/c XX1234 on 20-10-26. Avl Bal Rs 10,000.00",
+      "expect": null
+    },
+    {
+      "name": "Card bill paid (card side)",
+      "source": "sms",
+      "text": "Payment of Rs 15,000.00 received towards your HDFC Bank Credit Card ending 5678 on 20-10-26. Thank you.",
+      "expect": null
+    },
+    {
+      "name": "Card bill paid (bank side)",
+      "source": "sms",
+      "text": "Rs 15000.00 debited from A/c XX1234 on 20-10-26 towards HDFC CREDIT CARD payment. Ref 629322224444.",
+      "expect": null
+    },
+    {
+      "name": "UPI collect request",
+      "source": "notif",
+      "text": "Ravi Kumar has requested ₹200\nTap to pay",
+      "expect": null
+    },
+    {
+      "name": "An absurd amount (a card or phone number misread) is no payment",
+      "source": "sms",
+      "text": "Rs 99999999999999999999 debited from A/c XX1234 Ref 629300000001",
+      "expect": null
+    },
+    {
+      "name": "Cashback promo notification",
+      "source": "notif",
+      "text": "Get ₹100 cashback on your next recharge! Offer ends tonight.",
+      "expect": null
+    }
+  ]
+}

@@ -1009,6 +1009,42 @@ function salaryDueRow(money, due) {
   };
 }
 
+/* Automatic capture (server: money/CaptureService). A row it booked carries
+   `capture: {via, review?, dupOf?, typed?}`: via = 'notif' | 'sms' | 'share' |
+   'ios'; review only when it is genuinely unsure ('check': nothing ties it to a
+   payment, 'dup': the same money as a cash entry typed that day, 'transfer': looks
+   like a move between two of your accounts); typed = a quick add or WhatsApp
+   sentence already named it. Rows count in every total whether reviewed or not. */
+function capturedToReview(money) {
+  const rows = [];
+  for (const [list, kind] of [['expenses', 'expense'], ['income', 'income']])
+    for (const r of (money && money[list]) || [])
+      if (r && r.capture && r.capture.review) rows.push({ kind, row: r });
+  return rows.sort((a, b) => String(b.row.date).localeCompare(String(a.row.date)));
+}
+
+/* The captured row a typed entry is about: same kind, same amount to the paisa,
+   same day, not already named by an earlier sentence. Newest first. A quick add
+   fills it in (note, tag) instead of adding the payment a second time. */
+function matchCaptured(money, kind, amount, date) {
+  const list = (money && money[kind === 'income' ? 'income' : 'expenses']) || [];
+  const want = Math.round(Number(amount) * 100);
+  return (
+    list
+      .filter((r) => r && r.capture && !r.capture.typed && r.date === date && !r.orig && Math.round(Number(r.amount) * 100) === want)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null
+  );
+}
+
+/* That row, named by the sentence: its words as the note (or label), out of
+   review. Everything else (account, last 4, tag unless one is given) stays. */
+function claimCaptured(row, words, patch) {
+  const cap = { ...(row.capture || {}), typed: true };
+  delete cap.review;
+  delete cap.dupOf;
+  return { ...row, ...(patch || {}), capture: cap };
+}
+
 // Used by money.js / money-home.js; not a public API.
 export {
   CUR,
@@ -1056,4 +1092,7 @@ export {
   salaryPattern,
   salaryDue,
   salaryDueRow,
+  capturedToReview,
+  matchCaptured,
+  claimCaptured,
 };

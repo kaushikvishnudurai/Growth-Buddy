@@ -1234,6 +1234,46 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
   CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Automatic expense capture (money/CaptureService). capture_sources: one row per
+-- source a user switched on (notif = UPI and bank app notifications, sms = bank
+-- SMS, ios = the iPhone Shortcut). token_hash = SHA-256 of the Shortcut's token;
+-- the token is shown once and never stored. capture_refs: one row per payment a
+-- source reported, pointing at the ledger row it became or matched: kind, amount,
+-- time, last 4 and per-user salted hashes of the payment reference and of the
+-- message. No message text. A ref whose tx_id is gone is a payment the user
+-- deleted, so a later copy of it is skipped. Pruned after 180 days on each ingest.
+CREATE TABLE IF NOT EXISTS `capture_sources` (
+  `user_id` char(36) NOT NULL,
+  `source` varchar(8) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `token_hash` char(64) DEFAULT NULL,
+  `last_seen_at` datetime(6) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `source`),
+  UNIQUE KEY `uk_capture_token` (`token_hash`),
+  CONSTRAINT `fk_capture_sources_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `capture_refs` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` char(36) NOT NULL,
+  `tx_id` varchar(64) NOT NULL,
+  `kind` varchar(10) NOT NULL,
+  `amount` decimal(14,2) NOT NULL,
+  `seen_at` datetime(6) NOT NULL,
+  `last4` varchar(4) DEFAULT NULL,
+  `ref_hash` char(32) DEFAULT NULL,
+  `msg_hash` char(32) DEFAULT NULL,
+  `via` varchar(8) NOT NULL,
+  `origin` varchar(64) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_capture_refs_match` (`user_id`, `amount`, `seen_at`),
+  KEY `ix_capture_refs_tx` (`user_id`, `tx_id`),
+  KEY `ix_capture_refs_via` (`user_id`, `via`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Health readings, typed by hand (source 'manual', any number a day) or synced
 -- from Apple Health / Health Connect (source 'phone', one row per user + type +
 -- day, upserted). day is the user's local day; value2 is diastolic, bloodPressure only.

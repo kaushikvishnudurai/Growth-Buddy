@@ -891,3 +891,37 @@ export async function readHealthForSync(days = 7) {
   );
   return out;
 }
+
+/* ---------------------------------------------------------------------
+   Money's automatic capture: the GbCapture plugin (../Growth-Buddy-Mobile,
+   com.growthbuddy.capture). Android only; null on the web, on iOS and in an
+   APK built without it, so every caller just checks for null.
+     status()                 -> {notifAccess, smsGranted, smsAvailable}
+     setSources({notif, sms}) -> the native side stops queueing what is off
+     openNotificationAccess() -> the system "Notification access" page
+     requestSms()             -> {granted}  (only in a build that declares SMS)
+     peek()                   -> {items: [{id, via, origin, text, at}]}, kept until ack
+     ack({ids})               -> forget those (the server took them, or no payment)
+     readSmsInbox({sinceMs})  -> {items} bank-looking SMS since then, nothing kept
+     takeShared()             -> {text} the text another app shared in, once
+   The queue holds payment-looking text only until this app next opens; the
+   text is parsed here (bank-msg.js) and never sent anywhere.
+   --------------------------------------------------------------------- */
+export function capturePlugin() {
+  if (!isNative()) return null;
+  return nativePlugin('GbCapture');
+}
+
+/** Another app shared text in while this one was open: the plugin's 'shared' event. */
+export function onSharedText(cb) {
+  if (!capturePlugin()) return;
+  const cap = window.Capacitor;
+  const registered = cap.Plugins && cap.Plugins.GbCapture;
+  try {
+    if (registered && typeof registered.addListener === 'function') registered.addListener('shared', cb);
+    else if (typeof cap.nativeCallback === 'function')
+      cap.nativeCallback('GbCapture', 'addListener', { eventName: 'shared' }, cb);
+  } catch (_) {
+    /* an APK without the plugin */
+  }
+}
