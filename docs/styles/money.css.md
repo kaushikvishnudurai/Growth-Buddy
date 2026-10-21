@@ -57,6 +57,7 @@ bank-feed row) and `.gb-seg:disabled` (every segmented control).
 | Load older (`gb-money-older`, sits with `.gb-money-showall`) | expense list |
 | Slip check (`gb-money-jump-warn`: the 20x question as a warning above Save) and quiet deletes (`.gb-money-sheet .gb-btn--primary ~ .gb-btn--danger`: a dialog's Delete under its Save is red text, not a red block; a confirm's red primary is untouched) | expense dialog, every Money dialog with a delete |
 | Responsive — the review stats on a 540px viewport; the screen padding and four equal word-only tabs on `@container gb-main` (33.75rem, tighter under 20rem), so the tablet frame and Largest text get them; `.gb-money-swatch` takes a 44px tap from an `::after` | — |
+| Automatic capture (`gb-money-review-line`, `gb-money-review-*` cards (answers side by side when both fit, stacked under 9.5rem each, the second one edged), `is-done` fold, `gb-money-capture-offer*`, `gb-money-auto-tag.is-review`) | overview, review sheet, expense and income rows |
 | The statement (last section before pressed feedback, so it wins same-specificity fights): the slip, the Space Mono amount list, the passbook expense list (`gb-money-ledger`, `gb-money-ledger-day`), accounts as ruled lines + double-underlined total, budgets on hairlines, `bsummary` / `review-stats` as label-left amount-right lines, `.gb-money-modal` number inputs in mono, the set-budgets row as a grid (icon / tag over Roll over / amount) | overview, spending, income, dialogs |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in

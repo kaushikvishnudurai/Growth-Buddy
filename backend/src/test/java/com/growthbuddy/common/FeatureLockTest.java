@@ -45,6 +45,7 @@ class FeatureLockTest {
         assertThat(FeatureLockInterceptor.featureOf("/api/mentor")).isEqualTo("mentor");
         assertThat(FeatureLockInterceptor.featureOf("/api/mentorship/requests")).isEqualTo("circle");
         assertThat(FeatureLockInterceptor.featureOf("/api/reminders/{id}")).isEqualTo("calendar");
+        assertThat(FeatureLockInterceptor.featureOf("/api/capture/{via}/rows")).isEqualTo("money");
         assertThat(FeatureLockInterceptor.featureOf("/api/moneyx")).isNull();
         assertThat(FeatureLockInterceptor.featureOf("/api/auth/features")).isNull();
     }

@@ -706,6 +706,40 @@ CREATE TABLE IF NOT EXISTS `money_tx_tombstones` (
   PRIMARY KEY (`user_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Automatic expense capture (CaptureService). Two new tables, so guarded CREATEs;
+-- identical to the CREATE TABLEs in tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS `capture_sources` (
+  `user_id` char(36) NOT NULL,
+  `source` varchar(8) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `token_hash` char(64) DEFAULT NULL,
+  `last_seen_at` datetime(6) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `source`),
+  UNIQUE KEY `uk_capture_token` (`token_hash`),
+  CONSTRAINT `fk_capture_sources_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `capture_refs` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` char(36) NOT NULL,
+  `tx_id` varchar(64) NOT NULL,
+  `kind` varchar(10) NOT NULL,
+  `amount` decimal(14,2) NOT NULL,
+  `seen_at` datetime(6) NOT NULL,
+  `last4` varchar(4) DEFAULT NULL,
+  `ref_hash` char(32) DEFAULT NULL,
+  `msg_hash` char(32) DEFAULT NULL,
+  `via` varchar(8) NOT NULL,
+  `origin` varchar(64) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_capture_refs_match` (`user_id`, `amount`, `seen_at`),
+  KEY `ix_capture_refs_tx` (`user_id`, `tx_id`),
+  KEY `ix_capture_refs_via` (`user_id`, `via`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Circle removals: a removed member could re-join a public circle from Browse.
 -- A new table, so a guarded CREATE; identical to the CREATE TABLE in tableCreationQueries.sql.
 CREATE TABLE IF NOT EXISTS circle_removals (

@@ -28,6 +28,7 @@ public class FeatureLockInterceptor implements AsyncHandlerInterceptor {
             Map.entry("/api/goals", "goals"),
             Map.entry("/api/notes", "notes"),
             Map.entry("/api/money", "money"),
+            Map.entry("/api/capture", "money"),
             Map.entry("/api/focus", "focus"),
             Map.entry("/api/reminders", "calendar"),
             Map.entry("/api/mentor", "mentor"),

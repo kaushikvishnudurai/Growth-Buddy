@@ -40,6 +40,11 @@ module load and the query is stripped at once (a reload must not log a second gl
 **`runLaunchIntent()`** runs after the first `loadData()` wave 1: `water` → `quickAddWater(WATER_ACTION_ML)`
 + "Logged 250 ml of water." (when it landed online), `task` → `openAddTask()`, `focus` →
 `focusAutoStart = true; setScreen('focus')`, `quickadd` → `openAddSheet()`, a share →
+**`handleSharedText(text)`**: with Money on, a bank / UPI message (capture.js `readShared`) is shown as
+the payment it reports ("Add this payment?": amount, payee, day, last 4) and sent only on that tap
+(`captureShared`, `POST /api/capture` via `share`), then toasted with Undo ("Already in Money" when the
+server matched it, "deleted before" when it was). Never booked unseen: any app's intent or any page's link
+to the share target can carry text, so it is a claim until confirmed. Anything else goes to
 `openAddSheet({text, preview: true})`, which reads the words at once and always shows Quick add's
 preview (even a controls-only sentence), so nothing is written until the user confirms. Signed out,
 it waits for the sign-in's first load.
@@ -250,6 +255,17 @@ it silently landed on Home. Don't reintroduce a second list.
   `TaskMidnightSweep` soft-deletes completed tasks at the user's own local midnight, so they
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
+- **Automatic capture on the phone:** `syncCapturesFromPhone()` (after the first `loadData` and on every
+  return to the foreground) first runs `takeSharedFromPhone()` (a text shared in, into `handleSharedText`,
+  whatever Money's state; also on the plugin's live `shared` event via `onSharedText`), then with Money on:
+  once per signed-in user aligns the phone's switches with the account's (`GET /api/capture` →
+  `setSources`, `captureFlagsFor`), lazy-loads capture.js, sends what the native queue holds
+  (`drainPhoneCaptures`) and re-reads Money with `reloadMoneyFromServer()` (also in `settingsContext`)
+  when something landed. A share is offered as a capture only when Money's currency is ₹. `openCaptureSetup()` (a ScreenMoney prop) opens capture-ui.js's section on a sheet.
+  `addQuickExpense` / `addQuickIncome` first look for a captured row of the same amount that day
+  (money-core `matchCaptured`; never for a sentence that says "cash") and name it (`claimCaptured`) instead of adding the payment twice; the
+  answer carries `{id, was, matched}`, Undo (`undoQuickMoney`) puts the row back as it was, and
+  `announceQuickAdd` toasts the `matched` line ("Matched the ₹420 Blinkit payment already captured.").
 - **Quick add writes one clear read at once, with Undo; it previews the rest.** The sheet puts the
   line first and focuses it. A **single** model read (not `fallback`, nothing skipped, not unknown or
   unticked, not a control) is applied straight from `quickAddBox` and toasted as "Logged: <row>"

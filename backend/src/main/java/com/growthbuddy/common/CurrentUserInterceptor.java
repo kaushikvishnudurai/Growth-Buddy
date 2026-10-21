@@ -39,6 +39,7 @@ public class CurrentUserInterceptor implements AsyncHandlerInterceptor {
             "/api/auth/logout", // idempotent: works without a session too
             "/api/whatsapp/webhook", // Meta calls it; authenticated by its HMAC signature instead
             "/api/money/bank/webhook", // Setu calls it; a secret token in the URL, and the body is only a hint (BankFeedController)
+            "/api/capture/ios/message", // the iPhone Shortcut; a per-user token in X-Capture-Token (CaptureService.ingestText)
             "/api/reminders/snooze-link", // a push notification's Snooze button; a signed ticket instead (SnoozeLinks)
             "/api/reminders/done-link", // its Done button; same ticket, its own key
             "/api/habits/done-link", // a habit reminder's Done button; same ticket, its own key

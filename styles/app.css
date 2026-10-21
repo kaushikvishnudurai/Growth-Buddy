@@ -18034,3 +18034,31 @@ button.gb-tl-title {
     flex-basis: 100%;
   }
 }
+
+/* A shared bank message, confirmed before it is added (app.js handleSharedText):
+   the amount in mono, the payee in display type, like Money's review cards. */
+.gb-share-cap {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.gb-share-cap-amt {
+  font-family: var(--font-mono);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-share-cap-amt.is-in {
+  color: var(--success-soft-fg);
+}
+.gb-share-cap-who {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-share-cap-meta {
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}

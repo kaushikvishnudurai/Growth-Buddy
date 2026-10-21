@@ -106,6 +106,7 @@ let PREMIUM_KEY,
   featureOn,
   featureSwitchRow,
   lazyScreen,
+  reloadMoneyFromServer,
   repaintOverlays,
   privacyLink,
   otpBoxes,
@@ -165,6 +166,7 @@ function bind(ctx) {
     featureOn,
     featureSwitchRow,
     lazyScreen,
+    reloadMoneyFromServer,
     repaintOverlays,
     privacyLink,
     otpBoxes,
@@ -620,7 +622,21 @@ function customisePanes() {
           () => import('./money-screen.js'),
           (m) => m.MoneyCustomisePane(state.money, saveMoney)
         ),
-        bankFeedSection()
+        bankFeedSection(),
+        lazyScreen(
+          () => import('./capture-ui.js'),
+          (m) =>
+            m.CaptureSection({
+              api,
+              openModal,
+              toastSuccess,
+              toastError,
+              pushToast,
+              relativeTime,
+              reloadMoney: reloadMoneyFromServer,
+              state,
+            })
+        )
       )
     : null;
 

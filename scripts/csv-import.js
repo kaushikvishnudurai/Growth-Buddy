@@ -492,13 +492,37 @@ export function markDuplicates(entries, money) {
   const add = (k) => have.set(k, (have.get(k) || 0) + 1);
   for (const e of (money && money.expenses) || []) add(dupKey('expense', e.date, e.amount, e.note));
   for (const i of (money && money.income) || []) add(dupKey('income', i.date, i.amount, i.label));
+  // A payment automatic capture booked has the payee as its note, the statement
+  // has the bank's narration: same kind, day and amount is that payment, each
+  // captured row answering for one statement line.
+  const captured = new Map(); // kind + day + amount -> captured rows not yet matched to a line
+  const capturedExact = new Map(); // the same rows by their full key (note included)
+  const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+  for (const [list, kind, noteOf] of [
+    [(money && money.expenses) || [], 'expense', (e) => e.note],
+    [(money && money.income) || [], 'income', (e) => e.label],
+  ])
+    for (const e of list)
+      if (e && e.capture) {
+        bump(captured, dupKey(kind, e.date, e.amount, ''));
+        bump(capturedExact, dupKey(kind, e.date, e.amount, noteOf(e)));
+      }
   const seen = new Map();
   for (const e of entries) {
     const k = dupKey(e.kind, e.date, e.amount, e.note);
     const n = seen.get(k) || 0;
     seen.set(k, n + 1);
     const m = have.get(k) || 0;
-    e.dup = m ? 'existing' : n ? 'file' : null;
+    const ck = dupKey(e.kind, e.date, e.amount, '');
+    // A line that matched a captured row by its note used that row up: it can't
+    // also answer for a second line on the same day and amount.
+    if (m && capturedExact.get(k) > 0 && captured.get(ck) > 0) {
+      capturedExact.set(k, capturedExact.get(k) - 1);
+      captured.set(ck, captured.get(ck) - 1);
+    }
+    const byCapture = !m && captured.get(ck) > 0;
+    if (byCapture) captured.set(ck, captured.get(ck) - 1);
+    e.dup = m || byCapture ? 'existing' : n ? 'file' : null;
     // A ticked 'existing' row is a second copy: the count keeps its id off the one already saved.
     e.id = 'csv-' + hash(k + '|' + n + (m ? '|' + m : ''));
   }

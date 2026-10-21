@@ -2471,6 +2471,217 @@
   gap: 6px;
 }
 
+/* ---- Automatic capture: the "to review" line, its sheet, the Auto tag ----
+   Captured rows are already counted; review is for the rare unclear one. So the
+   line under the slip is quiet (a hairline row, not an alert), and each card in
+   the sheet is one question: amount in mono, payee in display type, the
+   question in plain words, two answers. An answered card folds up and the next
+   moves into its place. */
+.gb-money-review-line {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--fg1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-money-review-ic {
+  display: grid;
+  place-items: center;
+  color: var(--brand-ink);
+}
+.gb-money-review-text {
+  font-weight: 500;
+}
+.gb-money-review-count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.gb-money-review-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--brand-ink);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+@media (hover: hover) {
+  .gb-money-review-line:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+  }
+}
+.gb-money-review-line:active {
+  transform: scale(0.99);
+}
+
+.gb-money-review-list {
+  display: grid;
+  gap: var(--space-3);
+}
+.gb-money-review-card {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  transition:
+    opacity var(--dur-base) var(--ease-standard),
+    transform var(--dur-base) var(--ease-standard);
+}
+.gb-money-review-card.is-done {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+.gb-money-review-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.gb-money-review-amt {
+  font-family: var(--font-mono);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fg1);
+}
+.gb-money-review-amt.is-in {
+  color: var(--success-soft-fg);
+}
+.gb-money-review-who {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-body);
+  color: var(--fg1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gb-money-review-meta {
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-money-review-q {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg1);
+  max-width: 34rem;
+}
+.gb-money-review-taglabel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+.gb-money-review-tag {
+  min-height: 44px;
+}
+.gb-money-review-acts {
+  display: grid;
+  /* Side by side when both answers fit on one line each, stacked when not. */
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.gb-money-review-acts .gb-btn {
+  min-height: 44px;
+  margin: 0;
+  min-width: 0;
+  padding-inline: var(--space-3);
+}
+/* The other answer is as real as the first: an edged button, not loose text. */
+.gb-money-review-acts .gb-money-review-no {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
+  color: var(--fg1);
+}
+.gb-money-review-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--fg2);
+  font-size: var(--text-sm);
+}
+.gb-money-review-empty svg {
+  color: var(--success);
+}
+.gb-money-review-empty strong {
+  font-family: var(--font-display);
+  color: var(--fg1);
+  font-size: var(--text-body);
+}
+/* The invitation under the slip: the same quiet row shape, words and two buttons. */
+.gb-money-capture-offer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.gb-money-capture-offer-ic {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-money-capture-offer h2 {
+  padding-top: 0.4rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-money-capture-offer p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg2);
+  max-width: 34rem;
+}
+.gb-money-capture-offer-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.gb-money-capture-offer-acts .gb-btn {
+  min-height: 44px;
+  margin: 0;
+}
+/* The Auto tag shares the Bank tag's shape; one waiting for review is ringed. */
+.gb-money-auto-tag.is-review {
+  box-shadow: inset 0 0 0 1px var(--brand-edge);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-money-review-card {
+    transition: opacity var(--dur-fast) linear;
+  }
+  .gb-money-review-card.is-done {
+    transform: none;
+  }
+}
+
 /* ---- The statement: Money's signature ----------------------------------
    The Overview hero is a bank slip: the date and day of the month on its head,
    today's figure, a perforated tear, then the month as a printed statement
