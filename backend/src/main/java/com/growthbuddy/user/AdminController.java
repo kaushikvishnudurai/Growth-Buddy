@@ -41,10 +41,19 @@ public class AdminController {
 
     record LockRequest(String feature, String email, String reason) {}
 
+    /**
+     * Settings asks on every open, for every account, to decide whether to show the
+     * Operator section. A non-admin gets 204 (nothing to show), not the writes' 404:
+     * a 404 here was a console error for every user and failed the UI audit, and an
+     * empty answer gives away no more than the 404 did.
+     */
     @GetMapping("/feature-locks")
-    public List<LockView> list() {
-        requireAdmin();
-        return views();
+    public org.springframework.http.ResponseEntity<List<LockView>> list() {
+        User me = users.findById(CurrentUser.id()).orElse(null);
+        if (me == null || !me.isEmailVerified() || !AdminAccess.isAdmin(me.getEmail())) {
+            return org.springframework.http.ResponseEntity.noContent().build();
+        }
+        return org.springframework.http.ResponseEntity.ok(views());
     }
 
     private List<LockView> views() {

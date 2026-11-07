@@ -2592,6 +2592,88 @@ body:has(.is-thinking, .gb-thinking)::after {
   overflow-wrap: anywhere;
 }
 
+/* ---- First-run tour (tour.js), on the setup sheet's parts ---- */
+.gb-tour-next {
+  width: 100%;
+  margin-top: 14px;
+}
+.gb-tour-points,
+.gb-tour-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.gb-tour-point {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--fg2);
+  line-height: 1.45;
+}
+.gb-tour-point > .gb-icon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--brand-ink);
+}
+.gb-tour-rule {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.gb-tour-rule > b {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-tour-rule > span {
+  color: var(--fg2);
+}
+/* A drawing of the phone's card: not a control, so nothing in it reacts. */
+.gb-tour-card {
+  margin-bottom: var(--space-3);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.gb-tour-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-tour-card-title {
+  margin: 4px 0 10px;
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-tour-card-acts {
+  display: flex;
+  gap: 18px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+.gb-tour-perms {
+  display: grid;
+  gap: var(--space-2);
+}
+.gb-tour-on {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: var(--fg2);
+}
+
 /* ---- Settings: Account pane ---- */
 .gb-account-row {
   display: flex;
@@ -18061,4 +18143,148 @@ button.gb-tl-title {
 .gb-share-cap-meta {
   font-size: var(--text-xs);
   color: var(--fg2);
+}
+
+/* ---- A reminder's notes on Home (dashboard.js NotesLine) ----
+   One clamped line under the title; tapping it opens the note in place. With a
+   mouse, resting on the row floats the whole note in a peek card (after a beat,
+   so passing over the list doesn't flash cards), and the list never moves. */
+.gb-remnote-wrap {
+  position: relative;
+}
+.gb-remnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+  /* A tap target on a phone: the line itself is small text. */
+  min-height: 32px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  text-align: left;
+  cursor: pointer;
+}
+.gb-remnote > .gb-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg3);
+}
+.gb-remnote-text {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.gb-remnote[aria-expanded='true'] .gb-remnote-text {
+  display: block;
+  white-space: pre-wrap;
+}
+.gb-remnote-peek {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .gb-remnote-peek {
+    display: block;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 5;
+    width: min(320px, 100%);
+    max-height: 9.5em;
+    overflow: auto;
+    margin-top: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--fg1);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-2px);
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease,
+      visibility 0s linear 0.15s;
+  }
+  .has-notes:hover .gb-remnote-peek,
+  .gb-remnote:focus-visible + .gb-remnote-peek {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0.3s;
+  }
+  /* Opened in place already: no second copy floating under it. */
+  .gb-remnote[aria-expanded='true'] + .gb-remnote-peek {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-remnote-peek {
+    transform: none;
+  }
+}
+.gb-pending-main {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+}
+.gb-pending-main > .gb-pending-title {
+  display: flex;
+}
+
+/* ---- Notes: drafts from another session (notes.js markDraft / draftHint) ----
+   The card's mark sits top-left, the pin's mirror, so it reads on a photo
+   cover too; it is a label, not a control (the card opens it). */
+.gb-note-card.has-draft {
+  position: relative;
+}
+.gb-note-draft-mark {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brand-ink);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  pointer-events: none;
+}
+/* Room under the mark for a card with no cover, so it never sits on the title. */
+.gb-note-card.has-draft:not(.has-cover) {
+  padding-top: 36px;
+}
+.gb-note-draft-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 6px 0;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-note-draft-hint.is-remote {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--fg1);
 }

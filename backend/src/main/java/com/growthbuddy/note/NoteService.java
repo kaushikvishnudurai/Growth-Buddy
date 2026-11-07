@@ -41,6 +41,12 @@ public class NoteService {
         this.editDrafts = editDrafts;
     }
 
+    /** Which notes have unsaved edits: the cards' Draft mark. */
+    @Transactional(readOnly = true)
+    public List<NoteEditDraftMark> editDraftMarks(UUID userId) {
+        return editDrafts.marksFor(userId);
+    }
+
     /** Unsaved edits to note {@code id}, or null. */
     @Transactional(readOnly = true)
     public NoteDraftResponse editDraft(UUID userId, UUID id) {

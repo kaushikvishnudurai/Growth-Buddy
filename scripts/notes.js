@@ -940,6 +940,20 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
   return { close, card, commit };
 }
 
+/* A card's "Draft" mark: this note has unsaved edits, from this session or
+   another (note_edit_drafts). Toggled in place; rebuilding the card would
+   re-decode its cover. Opening the note picks the draft up. */
+function markDraft(card, on) {
+  card.classList.toggle('has-draft', on);
+  const mark = card.querySelector(':scope > .gb-note-draft-mark');
+  if (on && !mark) {
+    const chip = h('span', { class: 'gb-note-draft-mark' }, Icon('pencil', { size: 12, sw: 2.6 }), 'Draft');
+    const open = card.querySelector(':scope > .gb-note-open');
+    card.insertBefore(chip, open ? open.nextSibling : card.firstChild);
+    refreshIcons();
+  } else if (!on && mark) mark.remove();
+}
+
 /* Colour row. `null` is a real choice (no colour), so it gets a swatch too. */
 function colorRow(selected, onPick) {
   const row = h('div', { class: 'gb-note-colors' });
@@ -1184,6 +1198,7 @@ function ScreenNotes({
   onGetEditDraft,
   onSaveEditDraft,
   onDeleteEditDraft,
+  onListEditDrafts,
   onTrash,
   onCounts,
   onDeleteForever,
@@ -1196,6 +1211,8 @@ function ScreenNotes({
   }
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
+  const draftMarks = new Set(); // note ids with unsaved edits (GET /api/notes/edit-drafts, then gb:note-draft)
+  const openEdits = new Map(); // note id -> its open sheet, for a draft arriving from another session
   let query = '';
   let searchTimer = null;
   /* Which list is showing: the main one, the Archived view or the Trash. */
@@ -1378,16 +1395,44 @@ function ScreenNotes({
   let composerColor = composerDraft ? composerDraft.color : null;
   let draftTimer = null;
   let draftTouched = false; // typed here, so a late server copy must not overwrite it
+  let draftPending = false; // typed here and not on the server yet
+  // "Draft from <device>": what the composer is showing came from the server, not from typing here.
+  const draftHint = h('div', { class: 'gb-note-draft-hint', role: 'status', hidden: true });
+  function showDraftHint(text) {
+    draftHint.hidden = !text;
+    draftHint.textContent = text || '';
+  }
   function keepDraft() {
     draftTouched = true;
+    draftPending = true;
+    showDraftHint(null);
     composerDraft = { title: titleInput.value, html: editor.area.innerHTML, color: composerColor };
     const draft = composerDraft;
     clearTimeout(draftTimer);
     // Not cancelled when the screen goes: leaving right after typing still saves.
     draftTimer = setTimeout(() => {
-      if (onSaveDraft)
-        onSaveDraft({ title: draft.title, body: draft.html, color: draft.color }).catch(() => {});
+      if (!onSaveDraft) return (draftPending = false);
+      onSaveDraft({ title: draft.title, body: draft.html, color: draft.color })
+        .catch(() => {})
+        .finally(() => {
+          if (composerDraft === draft) draftPending = false;
+        });
     }, DRAFT_SAVE_MS);
+  }
+  /* The server's copy into the composer, without a keystroke: setting the fields
+     fires no input event, so nothing is autosaved back (two sessions adopting
+     each other's drafts must never write, or they would echo forever). */
+  function fillComposer(d) {
+    titleInput.value = d.title || '';
+    editor.area.innerHTML = sanitize(d.body || '');
+    composerColor = d.color || null;
+    const on = [null, ...COLORS].findIndex((c) => (c ? c.key : null) === composerColor);
+    Array.from(composer.querySelectorAll('.gb-note-swatch')).forEach((el, i) => {
+      el.classList.toggle('is-on', i === on);
+      el.setAttribute('aria-pressed', i === on ? 'true' : 'false');
+    });
+    composerDraft = { title: titleInput.value, html: editor.area.innerHTML, color: composerColor };
+    composer.classList.add('is-open');
   }
   function dropDraft() {
     clearTimeout(draftTimer);
@@ -1404,6 +1449,7 @@ function ScreenNotes({
     { class: 'gb-note-composer-body' },
     titleInput,
     editor.node,
+    draftHint,
     h(
       'div',
       { class: 'gb-note-composer-foot' },
@@ -1431,20 +1477,8 @@ function ScreenNotes({
     onGetDraft()
       .then((d) => {
         if (!d || draftTouched) return;
-        titleInput.value = d.title || '';
-        editor.area.innerHTML = sanitize(d.body || '');
-        composerColor = d.color || null;
-        const on = [null, ...COLORS].findIndex((c) => (c ? c.key : null) === composerColor);
-        Array.from(composer.querySelectorAll('.gb-note-swatch')).forEach((el, i) => {
-          el.classList.toggle('is-on', i === on);
-          el.setAttribute('aria-pressed', i === on ? 'true' : 'false');
-        });
-        composerDraft = {
-          title: titleInput.value,
-          html: editor.area.innerHTML,
-          color: composerColor,
-        };
-        composer.classList.add('is-open');
+        fillComposer(d);
+        showDraftHint('Unsaved draft, picked up where you left off.');
       })
       .catch(() => {});
   }
@@ -1602,6 +1636,7 @@ function ScreenNotes({
         )
       );
     }
+    if (view !== 'trash' && draftMarks.has(String(note.id))) markDraft(card, true);
     const titleEl = note.title ? h('h2', { class: 'gb-note-card-title' }, note.title) : null;
     const snippetEl = h('p', { class: 'gb-note-card-snippet', hidden: true });
     if (titleEl) card.appendChild(titleEl);
@@ -1830,11 +1865,14 @@ function ScreenNotes({
        id), the way the composer's new note always has. Only the composer's
        did: an edit lived in the open sheet alone, so a reload or a killed app
        lost it. Saving the note drops the draft server-side. */
+    // A draft line at the top of the sheet: one picked up on open, or one arriving from another session.
+    const remoteLine = h('div', { class: 'gb-note-draft-hint is-remote', role: 'status', hidden: true });
     let editTimer = null;
     let editStored = false; // a draft row may exist for this note
     let editTouched = false; // typed here, so a late server copy must not overwrite it
     function keepEdit() {
       editTouched = true;
+      remoteLine.hidden = true;
       clearTimeout(editTimer);
       editTimer = setTimeout(() => {
         if (!onSaveEditDraft) return;
@@ -1849,7 +1887,10 @@ function ScreenNotes({
     }
     function dropEdit() {
       clearTimeout(editTimer);
-      if (editStored && onDeleteEditDraft) onDeleteEditDraft(note.id).catch(() => {});
+      if (editStored && onDeleteEditDraft) {
+        onDeleteEditDraft(note.id).catch(() => {});
+        setDraftMark(String(note.id), false);
+      }
       editStored = false;
     }
 
@@ -2056,6 +2097,7 @@ function ScreenNotes({
         throw new Error('Not saved. Your changes are still here.');
       }
       editStored = false; // the PATCH dropped the draft
+      draftMarks.delete(String(note.id)); // and so does this session's mark (the frame skips its writer)
       Object.assign(note, saved);
       opened = snapshot(); // saved: the sheet now matches the server again
       // Archived (or brought back) from here: it belongs to the other list now.
@@ -2076,6 +2118,36 @@ function ScreenNotes({
     const snapshot = () =>
       JSON.stringify([title.value.trim(), ed.read(), color, pinned, labelEd.peek()]);
     let opened = snapshot();
+
+    /* Another session is drafting this same note (NoteDraftEvents). Never
+       applied by itself: closing this sheet saves what it shows, so taking the
+       other session's half-typed text in silently would save it out from under
+       that session. A line offers it instead; Load replaces what is here. */
+    body.insertBefore(remoteLine, body.firstChild);
+    openEdits.set(String(note.id), {
+      alive: () => body.isConnected && !body.closest('[inert]'),
+      remote(d, from) {
+        if (!d) return remoteLine.replaceChildren(), (remoteLine.hidden = true);
+        remoteLine.hidden = false;
+        remoteLine.replaceChildren(
+          h('span', null, 'Newer unsaved changes from ' + from + '.'),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              onclick: () => {
+                applyEditDraft(d);
+                editTouched = true;
+                remoteLine.hidden = true;
+                ed.focus();
+              },
+            },
+            'Load them'
+          )
+        );
+      },
+    });
 
     const open = sheet({
       title: 'Note',
@@ -2105,20 +2177,30 @@ function ScreenNotes({
       onGetEditDraft(note.id)
         .then((d) => {
           if (!d || editTouched) return;
-          editStored = true;
-          title.value = d.title || '';
-          ed.area.innerHTML = sanitize(d.body || '');
-          color = d.color || null;
-          // null: a draft from before labels were kept; leave the note's own.
-          if (Array.isArray(d.labels)) labelEd.set(d.labels);
-          const on = [null, ...COLORS].findIndex((c) => (c ? c.key : null) === color);
-          Array.from(body.querySelectorAll('.gb-note-swatch')).forEach((el, i) => {
-            el.classList.toggle('is-on', i === on);
-            el.setAttribute('aria-pressed', i === on ? 'true' : 'false');
-          });
-          toast.success('Picked up your unsaved changes.');
+          applyEditDraft(d);
+          /* Shown, not taken over: closing without a keystroke here neither saves
+             it as the note nor deletes it. The draft may still be being written in
+             another session, and saving it from here put half a sentence in the
+             note and handed that session a conflict. Save, or typing here, commits it. */
+          opened = snapshot();
+          editStored = false;
+          remoteLine.hidden = false;
+          remoteLine.replaceChildren(h('span', null, 'Showing an unsaved draft. Save to keep it, or keep editing.'));
         })
         .catch(() => {});
+    }
+    function applyEditDraft(d) {
+      editStored = true;
+      title.value = d.title || '';
+      ed.area.innerHTML = sanitize(d.body || '');
+      color = d.color || null;
+      // null: a draft from before labels were kept; leave the note's own.
+      if (Array.isArray(d.labels)) labelEd.set(d.labels);
+      const on = [null, ...COLORS].findIndex((c) => (c ? c.key : null) === color);
+      Array.from(body.querySelectorAll('.gb-note-swatch')).forEach((el, i) => {
+        el.classList.toggle('is-on', i === on);
+        el.setAttribute('aria-pressed', i === on ? 'true' : 'false');
+      });
     }
   }
 
@@ -2380,6 +2462,7 @@ function ScreenNotes({
         if (view === 'notes') fromServer = true;
         sortNotes();
         paint();
+        refreshDraftMarks();
         paintViews();
         refreshCounts();
         // The command palette's pick (a note id, or 'new'), once the list is in.
@@ -2438,6 +2521,73 @@ function ScreenNotes({
   // Search (with sort) is the top bar, sticky while the list scrolls; everything
   // else — banner, composer, views, label chips — sits under it.
   const node = h('div', { class: 'gb-notes' }, tools, offlineBanner, composer, viewRow, labelRow, listEl);
+
+  /* ---- drafts from the user's other sessions (app.js relays NoteDraftEvents
+     frames as gb:note-draft; its own autosaves are filtered out by origin).
+     A frame only says which draft moved; the draft itself is read here. ---- */
+  function onRemoteDraft(e) {
+    if (!node.isConnected) return window.removeEventListener('gb:note-draft', onRemoteDraft); // a later visit has its own
+    if (offline) return;
+    const n = e.detail || {};
+    const from = n.device ? String(n.device).replace(/^Growth Buddy on /, '') : 'another session';
+    if (n.note === 'composer') return remoteComposer(from);
+    const id = String(n.note || '');
+    if (!id || !onGetEditDraft) return;
+    onGetEditDraft(id)
+      .then((d) => {
+        setDraftMark(id, !!d);
+        const sheetOpen = openEdits.get(id);
+        if (sheetOpen && sheetOpen.alive()) sheetOpen.remote(d, from);
+        else openEdits.delete(id);
+      })
+      .catch(() => {});
+  }
+  window.addEventListener('gb:note-draft', onRemoteDraft);
+
+  /* Taken in only while nobody is writing here: not while the composer has
+     focus, nor while an autosave of this session's typing is still on its way.
+     Otherwise the line says the draft is moving elsewhere and this copy wins
+     (it is the one this session will save). */
+  function remoteComposer(from) {
+    if (!onGetDraft) return;
+    const busyHere = () => draftPending || composerBody.contains(document.activeElement);
+    if (busyHere()) return showDraftHint('Also being written on ' + from + '. This copy is the one saved from here.');
+    onGetDraft()
+      .then((d) => {
+        if (busyHere()) return;
+        draftTouched = false;
+        if (d) {
+          fillComposer(d);
+          showDraftHint('Draft from ' + from + ', still being written.');
+          return;
+        }
+        // Saved or discarded there: this copy goes too. No delete from here, the row is already gone.
+        composerDraft = null;
+        titleInput.value = '';
+        editor.area.innerHTML = '';
+        composer.classList.remove('is-open');
+        showDraftHint(null);
+      })
+      .catch(() => {});
+  }
+
+  function refreshDraftMarks() {
+    if (!onListEditDrafts || view === 'trash') return;
+    onListEditDrafts()
+      .then((list) => {
+        draftMarks.clear();
+        (Array.isArray(list) ? list : []).forEach((m) => m && m.noteId && draftMarks.add(String(m.noteId)));
+        listEl.querySelectorAll('.gb-note-card').forEach((card) => markDraft(card, draftMarks.has(card.dataset.id)));
+      })
+      .catch(() => {});
+  }
+  function setDraftMark(id, on) {
+    if (on) draftMarks.add(id);
+    else draftMarks.delete(id);
+    const card = view === 'trash' ? null : cardOf(id);
+    if (card) markDraft(card, on);
+  }
+
   liveScreen = {
     node,
     userId,

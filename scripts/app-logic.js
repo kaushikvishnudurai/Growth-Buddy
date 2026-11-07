@@ -190,6 +190,28 @@ export function firstRunSteps({ hasGoal, accountZone, deviceZone }) {
   return [hasGoal && 'goal', differs && 'timezone'].filter(Boolean);
 }
 
+/* Whether the first-run tour (tour.js) opens, before first-run setup. Asked
+   after setupDone / setupStep have had their say, so only for an account
+   setup hasn't reached: never once it finished or was skipped (`tourDone`);
+   resumed when it began (`tourStarted`) and the app closed mid-way, because
+   its own reminder step makes the data that would otherwise read as an old
+   account; else only with no data, which every account from before the tour
+   has. Settings › Reminders replays it on request. */
+export function tourDue({ prefs, hasData }) {
+  const p = prefs || {};
+  return !p.tourDone && (!!p.tourStarted || !hasData);
+}
+
+/* The tour's first-reminder defaults from the account's clock ('HH:MM', the same clock
+   addReminder checks): the next whole hour today, or 09:00 tomorrow once
+   there is no whole hour left today, so the first tap never meets "That time
+   has already passed". */
+export function firstSlot(hhmm) {
+  const hour = /^\d\d:/.test(String(hhmm)) ? Number(String(hhmm).slice(0, 2)) : 23;
+  if (hour >= 23) return { tomorrow: true, time: '09:00' };
+  return { tomorrow: false, time: String(hour + 1).padStart(2, '0') + ':00' };
+}
+
 /* Whether saving something timed should ask for notifications now: once per
    account (`asked` = ui_prefs.pushAsked), never inside first-run, only where
    the platform can notify, push is off on this device and the user hasn't

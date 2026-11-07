@@ -11,6 +11,35 @@ export function isNative() {
   return !!(cap && (cap.isNativePlatform ? cap.isNativePlatform() : cap.isNative));
 }
 
+/* Ringing like an alarm (RingService, the mobile repo) is Android-only: iOS
+   can't play a tone in the background beyond a notification's own sound. */
+export function canRingLikeAlarm() {
+  const cap = typeof window !== 'undefined' ? window.Capacitor : null;
+  return isNative() && !!cap && !!cap.getPlatform && cap.getPlatform() === 'android';
+}
+
+/* Whether a ringing reminder can open over the lock screen ('granted' |
+   'blocked'); Android 14+ can switch that off. 'unsupported' off Android or on
+   an APK without the methods. */
+export async function fullScreenStatus() {
+  const P = canRingLikeAlarm() ? nativePlugin('AppPermissions') : null;
+  try {
+    return P ? (await P.fullScreenStatus()).state : 'unsupported';
+  } catch (_) {
+    return 'unsupported';
+  }
+}
+
+/** Android 14+: the system page where "full screen notifications" is switched on. */
+export async function openFullScreenSettings() {
+  const P = nativePlugin('AppPermissions');
+  try {
+    if (P) await P.openFullScreenSettings();
+  } catch (_) {
+    /* an older APK */
+  }
+}
+
 /**
  * The public web address of the app, no trailing slash: what a link meant for
  * someone else (a Circle invite, the privacy policy, "download it on the
@@ -227,6 +256,12 @@ export function isStaleChannel(id, version = CHANNEL_VERSION) {
 
 export const SILENT_CHANNEL = versionedChannel('gb-silent');
 
+/* A reminder that rings like an alarm: banner, no channel sound, because the
+   phone's RingService plays the tone itself on the alarm stream. Built natively
+   (RingService.ensureChannel, at app start): the plugin would give a channel
+   with no sound the system default. Not versioned for the same reason. */
+export const RING_CHANNEL = 'gb-ring';
+
 /* Delete our channels from earlier (or later) versions. Promise-style
    listChannels/deleteChannel only; iOS and the web have no channels, and a
    rejection there is the expected answer. Never touches a channel we didn't
@@ -319,6 +354,18 @@ export function localNotificationsAvailable() {
   return isNative() && !!nativePlugin('LocalNotifications');
 }
 
+/** The bodies of this app's cards in the shade (push.js: an early alert already shown). */
+export async function deliveredLocalBodies() {
+  const LN = nativePlugin('LocalNotifications');
+  if (!LN) return new Set();
+  try {
+    const r = await LN.getDeliveredNotifications();
+    return new Set(((r && r.notifications) || []).map((n) => n.body).filter(Boolean));
+  } catch (_) {
+    return new Set();
+  }
+}
+
 /** 'granted' | 'denied' | 'prompt' | 'unsupported' */
 export async function localNotificationPermission() {
   const LN = nativePlugin('LocalNotifications');
@@ -358,6 +405,23 @@ export async function scheduleLocalNotifications(items) {
   try {
     // Cheap after the first of each id — ensureChannel returns on a Set hit.
     for (const n of items) {
+      if (n.extra && n.extra.ring) {
+        // The tone's channel is still built: for an own sound that is what
+        // writes the file RingService plays. It is also `ringFallback`, where
+        // the phone re-posts the card when the ring can't start (no exact-alarm
+        // exemption), so a reminder never lands silent on the soundless
+        // RING_CHANNEL. An own sound that failed to build rings the default,
+        // as on the plain path below.
+        let tone = n.channelId;
+        if (!(await ensureChannel(LN, tone, n.sound, n.customSound))) {
+          tone = versionedChannel('gb-tone-default');
+          await ensureChannel(LN, tone);
+          n.extra = Object.assign({}, n.extra, { ring: tone });
+        }
+        n.extra = Object.assign({}, n.extra, { ringFallback: tone });
+        n.channelId = RING_CHANNEL;
+        continue;
+      }
       if (!(await ensureChannel(LN, n.channelId, n.sound, n.customSound))) {
         n.channelId = versionedChannel('gb-tone-default');
         await ensureChannel(LN, n.channelId);

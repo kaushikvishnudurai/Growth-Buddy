@@ -2098,12 +2098,40 @@ function RowMenu(label, items) {
   return [btn, pop];
 }
 
-function tlRow({ time, late, kind, done, paused, node, title, sub, onTitle, menu, dim }) {
+/* A reminder's notes on Home, without leaving it. One line under the title,
+   clamped; a tap opens the full text in place (touch has no hover). With a
+   mouse, resting on the row (or tabbing to the line) floats the whole note in
+   a peek card instead, so the list never jumps. The line carries the full text
+   for a screen reader; the peek is a visual copy. Opened ones are remembered
+   by reminder id (openNotes): Home re-renders on any data change, from this
+   device or another, and a note being read must not fold shut under the user. */
+const openNotes = new Set();
+function NotesLine(notes, id) {
+  const text = typeof notes === 'string' ? notes.trim() : '';
+  if (!text) return null;
+  const open = openNotes.has(id);
+  const line = h(
+    'button',
+    { type: 'button', class: 'gb-remnote', 'aria-expanded': open ? 'true' : 'false', 'aria-label': 'Notes: ' + text },
+    Icon('text', { size: 12, sw: 2.4 }),
+    h('span', { class: 'gb-remnote-text' }, text)
+  );
+  line.onclick = () => {
+    const next = line.getAttribute('aria-expanded') !== 'true';
+    line.setAttribute('aria-expanded', String(next));
+    if (next) openNotes.add(id);
+    else openNotes.delete(id);
+  };
+  return h('div', { class: 'gb-remnote-wrap' }, line, h('div', { class: 'gb-remnote-peek', 'aria-hidden': 'true' }, text));
+}
+
+function tlRow({ time, late, kind, done, paused, node, title, sub, notes, notesId, onTitle, menu, dim }) {
+  const notesLine = NotesLine(notes, notesId);
   return h(
     'li',
     {
       class:
-        'gb-tl-row is-' + kind + (done ? ' is-done' : '') + (paused ? ' is-paused' : '') + (dim ? ' is-dim' : ''),
+        'gb-tl-row is-' + kind + (done ? ' is-done' : '') + (paused ? ' is-paused' : '') + (dim ? ' is-dim' : '') + (notesLine ? ' has-notes' : ''),
     },
     h('span', { class: 'gb-tl-time' + (late ? ' is-late' : '') }, time || ''),
     h('span', { class: 'gb-tl-node' }, node),
@@ -2113,7 +2141,8 @@ function tlRow({ time, late, kind, done, paused, node, title, sub, onTitle, menu
       onTitle
         ? h('button', { type: 'button', class: 'gb-tl-title', onclick: onTitle }, title)
         : h('div', { class: 'gb-tl-title' }, title),
-      sub ? h('div', { class: 'gb-tl-sub' }, sub) : null
+      sub ? h('div', { class: 'gb-tl-sub' }, sub) : null,
+      notesLine
     ),
     menu || null
   );
@@ -2156,6 +2185,8 @@ function DayTimeline({
       node: h('span', { class: 'gb-tl-dot', style: { '--tag-color': (TAGS[r.tag] || TAGS.other).color } }, Icon('bell', { size: 13, sw: 2.6 })),
       title: r.text,
       sub: r.endTime ? 'Until ' + sharedFormatTime(r.endTime) : null,
+      notes: r.notes,
+      notesId: r.id,
       onTitle: onOpenCalendar,
     });
     if (r.time) timed.push({ min: toMin(r.time), row });
@@ -2473,6 +2504,8 @@ function TodayCard(props) {
   );
   const remItem = (r, when, late) => ({
     title: r.text,
+    notes: r.notes,
+    notesId: r.id,
     when,
     late,
     icon: 'bell',
@@ -2566,17 +2599,19 @@ function TodayCard(props) {
           ? h(
               'ul',
               { class: 'gb-pending-list' },
-              shown.map((it) =>
-                h(
+              shown.map((it) => {
+                const notes = NotesLine(it.notes, it.notesId);
+                const title = h('span', { class: 'gb-pending-title', title: it.title }, it.icon ? Icon(it.icon, { size: 14, sw: 2.4 }) : null, h('span', null, it.title));
+                return h(
                   'li',
-                  { class: 'gb-pending-row' },
+                  { class: 'gb-pending-row' + (notes ? ' has-notes' : '') },
                   it.tick
                     ? Check({ onToggle: it.tick, label: it.title, list: 'pending' })
                     : h('span', { class: 'gb-tl-dot' }, Icon(it.icon || 'circle', { size: 13, sw: 2.6 })),
-                  h('span', { class: 'gb-pending-title', title: it.title }, it.icon ? Icon(it.icon, { size: 14, sw: 2.4 }) : null, h('span', null, it.title)),
+                  notes ? h('div', { class: 'gb-pending-main' }, title, notes) : title,
                   h('span', { class: 'gb-pending-when' + (it.late ? ' is-late' : '') }, it.when)
-                )
-              )
+                );
+              })
             )
           : h('p', { class: 'gb-pending-calm' }, total ? 'Nothing left for today.' : 'Nothing due today. Add a task or habit to plan it.'),
         more

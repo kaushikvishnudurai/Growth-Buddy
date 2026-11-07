@@ -37,10 +37,10 @@ import {
   TAGS,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
-import { disablePush, pushSubscribed, pushSupported, pushTestLocal } from './push.js';
+import { disablePush, pushSubscribed, pushSupported, pushTestLocal, pushUnsupportedMessage } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import { latestSeq } from './app-logic.js';
-import { localNotificationsAvailable, nativePlugin } from './native.js';
+import { localNotificationsAvailable, nativePlugin, canRingLikeAlarm } from './native.js';
 import { offerFile } from './save-file.js';
 import {
   CUSTOM_MAX_BYTES,
@@ -95,6 +95,8 @@ let PREMIUM_KEY,
   uploadNewCustomSound,
   openIcsImportDialog,
   snoozeMinutes,
+  ringSettingRow,
+  openTour,
   cancelReminderSnooze,
   waterReminderPrefs,
   reSyncDeviceAlarms,
@@ -155,6 +157,8 @@ function bind(ctx) {
     uploadNewCustomSound,
     openIcsImportDialog,
     snoozeMinutes,
+    ringSettingRow,
+    openTour,
     cancelReminderSnooze,
     waterReminderPrefs,
     reSyncDeviceAlarms,
@@ -986,7 +990,7 @@ function securitySection() {
 
 /* ---- Operator: feature locks (/api/admin/feature-locks) ----
    Only an account on the AdminAccess list (user/AdminAccess.java) can read the list.
-   Anyone else gets a 404, so this stays an empty box and nobody sees the section. */
+   Anyone else gets a 204 and no list, so this stays an empty box and nobody sees the section. */
 function operatorSection() {
   const wrap = h('div', { class: 'gb-operator' });
   const featureName = (key) => (FEATURE_DEFS.find((f) => f.key === key) || { label: key }).label;
@@ -1084,7 +1088,10 @@ function operatorSection() {
     );
   }
 
-  api('/api/admin/feature-locks').then(paint).catch(() => {});
+  // 204 (null) for everyone but an operator: the section stays an empty box.
+  api('/api/admin/feature-locks')
+    .then((list) => list && paint(list))
+    .catch(() => {});
   return wrap;
 }
 
@@ -1568,12 +1575,15 @@ function reminderSettingsPane() {
     String(snoozeMinutes()),
     (v) => {
       saveUiPrefs({ snoozeMinutes: Number(v) });
+      reSyncDeviceAlarms(); // the phone's Snooze button names the length
       repaintOverlays();
       toastSuccess('Snooze set to ' + minutesLabel(Number(v)) + '.');
     }
   );
 
   const addForm = reminderQuickAdd().node;
+  // Shared with the tour (ring-row.js, built by app.js ringSettingRow).
+  const ringBlock = canRingLikeAlarm() ? ringSettingRow() : null;
 
   // ---- The list ----
   const count = h('span', { class: 'gb-sound-count' });
@@ -1702,6 +1712,7 @@ function reminderSettingsPane() {
       'How long Snooze waits before it rings again. It’s on the reminder in the app, on its notification, and on WhatsApp — tap Snooze there, or reply SNOOZE (or “snooze 20”).'
     ),
     h('div', { class: 'gb-remset-picker gb-remset-picker--5' }, snoozePicker.node),
+    ringBlock,
     h(
       'div',
       { class: 'gb-sounds-head', style: { marginTop: '22px' } },
@@ -1710,6 +1721,9 @@ function reminderSettingsPane() {
     ),
     addForm,
     list,
+    h('h3', { class: 'gb-settings-sec-label' }, 'The tour'),
+    h('div', { class: 'gb-field-hint' }, 'A minute on reminders, repeats, Done and Snooze, and the permissions that make them ring.'),
+    h('button', { type: 'button', class: 'gb-btn gb-btn--secondary', onclick: () => openTour() }, 'Take the tour again'),
     h('h3', { class: 'gb-settings-sec-label' }, 'Other calendars'),
     h(
       'div',
@@ -2660,7 +2674,7 @@ function openProfileSettings(initialTab) {
     });
   pushBtn.onclick = async () => {
     if (!pushSupported()) {
-      pushToast('This browser doesn’t support push notifications.', 'error', 3600);
+      pushToast(pushUnsupportedMessage(), 'error', 4200);
       return;
     }
     pushBtn.disabled = true;
@@ -3213,9 +3227,11 @@ function openProfileSettings(initialTab) {
         ' of your own — a file under ' +
         Math.round(CUSTOM_MAX_BYTES / 1024) +
         ' KB, or your voice recorded here. Each stops after five seconds, follows you to your other devices, and can be picked for a single reminder or habit too.' +
-        // True everywhere: Android can only ring a file that ships with the app,
-        // and a Web Push notification rings with the browser's own sound.
-        ' Plays in the app only — the lock screen uses built-in tones.'
+        // The app rings them on the lock screen too (CustomNotificationSoundPlugin's
+        // channel, RingService); a Web Push notification takes the browser's own sound.
+        (localNotificationsAvailable()
+          ? ' Rings on the lock screen too.'
+          : ' Plays while the app is open — a notification from the browser uses its own sound.')
     ),
     h('h3', { class: 'gb-settings-sec-label' }, 'Notify me about'),
     h(

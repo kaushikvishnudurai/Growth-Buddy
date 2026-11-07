@@ -65,6 +65,7 @@ import {
   sameZone,
   firstRunSteps,
   pushAskDue,
+  tourDue,
   noonIn,
   SAVED_ON_PHONE,
   savedLocallyMessage,
@@ -144,6 +145,7 @@ import {
   disablePush,
   pushSubscribed,
   pushSupported,
+  pushUnsupportedMessage,
   syncDeviceAlarms,
   cancelAllAlarms,
   usualDrinkHours,
@@ -193,8 +195,10 @@ import {
   publicSiteUrl,
   capturePlugin,
   onSharedText,
+  canRingLikeAlarm,
 } from './native.js';
 import { launchIntent } from './launch-intent.js';
+import { RingRow } from './ring-row.js';
 import { registerSW } from 'virtual:pwa-register';
 import { registerToast } from './toast.js';
 import { createUndoQueue } from './undo-queue.js';
@@ -1701,6 +1705,7 @@ async function pullCustomChime() {
    premium key it lacks means the default (System, normal, off) — not whatever
    the last account left in this device's cookies. Only then: a patch without
    uiPrefs leaves state.user's older copy, which may be a slim cookie's. */
+let alarmPrefsSig = null;
 function hydrateUiPrefs(fromServer) {
   // A new account's row has none yet (null): that answer is all defaults too.
   const p = (state.user && state.user.uiPrefs) || (fromServer ? {} : null);
@@ -1748,6 +1753,17 @@ function hydrateUiPrefs(fromServer) {
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
     else CacheStorage.removeItem('gb.onboardDismissed');
     // achSeen is read straight from ui_prefs (checkAchievements): no local mirror.
+    // The phone's alarm queue is built from these prefs too (tone, lead, ring, quiet
+    // hours, water). A cold start syncs it from the slim cookie's session, which has
+    // none, so every reminder was queued on time in the default tone until something
+    // else re-synced. Re-arm whenever the prefs it was built from change.
+    // Signed on what the queue reads, not the whole blob: /me's copy of an unchanged
+    // blob differs from the cached one, and every boot rebuilt ~100 alarms twice.
+    const sig = JSON.stringify([notifySound(), getDefaultLead(), reminderRing(), quietHours(), snoozeMinutes(), waterReminderPrefs(), p.breakFrom, p.breakUntil, notifyMuted('habits')]);
+    if (sig !== alarmPrefsSig) {
+      alarmPrefsSig = sig;
+      reSyncDeviceAlarms();
+    }
   } catch (_) {
     /* silent — cache mirror is best-effort */
   }
@@ -2343,7 +2359,7 @@ async function enablePushFlow(okMessage) {
       4200
     );
   } else if (r === 'unsupported') {
-    pushToast('This browser doesn’t support push notifications.', 'error', 4200);
+    pushToast(pushUnsupportedMessage(), 'error', 4200);
   } else {
     pushToast('Could not enable push. Please try again.', 'error', 3600);
   }
@@ -2407,6 +2423,11 @@ function maybeStartFirstRun() {
     (state.habits || []).length > 0 ||
     (state.reminders || []).length > 0 ||
     !!p.onboardingDone;
+  // A new account walks the tour first (and one that left it mid-way resumes it).
+  if (tourDue({ prefs: p, hasData })) {
+    setTimeout(() => openTour({ thenSetup: true }), 600);
+    return;
+  }
   if (hasData) {
     saveUiPrefs({ setupDone: true });
     syncDeviceTimezone(); // the offer stood down while this was undecided
@@ -2416,6 +2437,46 @@ function maybeStartFirstRun() {
   // A beat after first paint, like the timezone offer, so it lands on Home
   // rather than on the loading card.
   setTimeout(openFirstRunSetup, 600);
+}
+
+/* The tour (tour.js, lazy): a new account's, before first-run setup, or a
+   replay from Settings › Reminders. firstRunOpen holds while it is up, so the
+   first reminder it adds doesn't stack the push ask over it (askPushOnce): the
+   tour asks with its reason, on a tap. Any way out records `tourDone`. */
+let tourOpen = false;
+async function openTour({ thenSetup = false } = {}) {
+  // tourOpen covers the chunk load too: two quick calls must not stack two tours.
+  if (!state.user || tourOpen || firstRunOpen) return;
+  tourOpen = true;
+  firstRunOpen = true;
+  // Recorded at open: its reminder step makes data, and a tour left mid-way
+  // must resume (tourDue), not read as an old account that skips setup.
+  if (thenSetup && !(state.user.uiPrefs || {}).tourStarted) saveUiPrefs({ tourStarted: true });
+  const mod = await import('./tour.js').catch(() => null);
+  if (!mod || !state.user) {
+    tourOpen = false;
+    firstRunOpen = false;
+    if (thenSetup && state.user) openFirstRunSetup(); // offline: setup still runs
+    return;
+  }
+  mod.openTour({
+    todayKey,
+    nowHHMM: () => accountHHMM(),
+    addReminder: (key, text, time) => addReminder(key, text, time),
+    enablePushFlow,
+    saveUiPrefs,
+    snoozeMinutes,
+    minutesLabel,
+    ringRow: () => ringSettingRow(),
+    replay: !thenSetup,
+    onClose: () => {
+      tourOpen = false;
+      firstRunOpen = false;
+      if (!state.user) return;
+      saveUiPrefs({ tourDone: true });
+      if (thenSetup) openFirstRunSetup();
+    },
+  });
 }
 
 /* Accounts set up before health data existed: ask once, on the phone, for
@@ -3518,7 +3579,18 @@ async function connectWebSocket() {
             // device (DataChangedInterceptor). Reload in place; our own writes are
             // skipped by origin.
             if (n.kind === 'data_changed') {
-              if (n.origin !== CLIENT_ID) syncFromElsewhere();
+              if (n.origin !== CLIENT_ID) {
+                // The reload waits for a closed dialog or a visible app; the phone's
+                // alarm queue must not, or a reminder made elsewhere never rings here.
+                if (document.hidden || userIsEditing()) refreshAlarmInputs();
+                syncFromElsewhere();
+              }
+              return;
+            }
+            // A note draft changed in another session (NoteDraftEvents): the Notes
+            // screen fetches it and shows it as a draft. Nothing reloads.
+            if (n.kind === 'note_draft') {
+              if (n.origin !== CLIENT_ID) window.dispatchEvent(new CustomEvent('gb:note-draft', { detail: n }));
               return;
             }
             if (n.kind === 'family_changed') {
@@ -3554,7 +3626,10 @@ async function connectWebSocket() {
                 ? { label: 'Snooze ' + minutesLabel(snoozeMinutes()), run: () => snoozeReminder(snoozable.id, null, n.id) }
                 : null
             );
-            playChime(notifySoundFor(n));
+            // On the phone the device alarm already rang it (RingService or its channel);
+            // a second sound from the open app played over the ring.
+            const rangOnDevice = deviceAlarmsArmed && (n.kind === 'reminder' || n.kind === 'habit_reminder');
+            if (!rangOnDevice) playChime(notifySoundFor(n));
           } catch (e) {
             console.warn('Bad notification frame', e);
           }
@@ -8694,7 +8769,7 @@ function settingsContext() {
     adoptServerMoney, reloadMoneyFromServer, persistMoney, saveMoney, saveUiPrefs, notifySound, readCustomChimes, storeCustomChimes,
     newSoundId, todayKey, syncUserSession, enablePushFlow, api, withPendingWater, invalidateWeek,
     pickedTheme, setThemeChoice, notifyMuted, keyOfDate, shortDay, reminderQuickAdd, uploadNewCustomSound,
-    openIcsImportDialog, snoozeMinutes, cancelReminderSnooze, waterReminderPrefs,
+    openIcsImportDialog, snoozeMinutes, ringSettingRow, openTour, cancelReminderSnooze, waterReminderPrefs,
     reSyncDeviceAlarms, deleteReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
     featureSwitchRow, lazyScreen, repaintOverlays, privacyLink, otpBoxes, logout, endSession, render,
     breakPrefs, breakUntilLabel, takeBreak, endBreakNow,
@@ -9545,6 +9620,25 @@ function openIcsImportDialog() {
     .catch((err) => toastError(err, 'Couldn’t open the importer. Check your connection and try again.'));
 }
 
+/* Reminders ring like an alarm on Android unless switched off
+   (ui_prefs.reminderRing 'notification'): a channel's sound is what OEM
+   policies and a muted notification volume silence; the alarm stream isn't. */
+function reminderRing() {
+  return canRingLikeAlarm() && ((state.user && state.user.uiPrefs) || {}).reminderRing !== 'notification';
+}
+
+/* The Ring like an alarm switch, as Settings › Reminders and the tour both show
+   it (ring-row.js). Switching it re-arms the phone's queue here, once. */
+function ringSettingRow() {
+  return RingRow({
+    on: reminderRing,
+    set: (on) => {
+      saveUiPrefs({ reminderRing: on ? 'alarm' : 'notification' });
+      reSyncDeviceAlarms();
+    },
+  });
+}
+
 function snoozeMinutes() {
   const v = Number(((state.user && state.user.uiPrefs) || {}).snoozeMinutes);
   return Number.isFinite(v) && v >= 1 && v <= 240 ? Math.round(v) : 10;
@@ -9829,8 +9923,14 @@ function reSyncDeviceAlarms() {
     quiet: quietHours(),
     breakPrefs: breakPrefs(),
     snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
-  }).catch(() => {});
+    ring: reminderRing(),
+  })
+    .then((n) => (deviceAlarmsArmed = n > 0))
+    .catch(() => {});
 }
+// The phone holds this account's reminder and habit alarms (syncDeviceAlarms queued
+// some): they make their own sound, so the in-app chime for the same one stays quiet.
+let deviceAlarmsArmed = false;
 
 /* ---- Buttons on the phone's notifications ----
    Done / Snooze on a reminder, Done on a plain habit, +250 ml on the water
@@ -12788,6 +12888,7 @@ const SCREENS = {
               }),
             onDeleteEditDraft: (id) =>
               api('/api/notes/' + encodeURIComponent(id) + '/draft', { method: 'DELETE' }),
+            onListEditDrafts: () => api('/api/notes/edit-drafts'),
             onMakeTask: (title) => createTask({ title }),
             // The palette's pick: a note id to open, or 'new' for the composer. Taken once.
             openOnMount: (() => {
@@ -14801,6 +14902,9 @@ if (CacheStorage.init) {
         // anything /api/auth/me may already have refreshed.
         const full = loadSession();
         if (full) Object.keys(full).forEach((k) => k in state.user || (state.user[k] = full[k]));
+        // The slim session had no uiPrefs: apply them now, not when /api/auth/me
+        // answers (offline: never). Also re-arms the phone's alarms built without them.
+        hydrateUiPrefs(false);
         state.wellness = loadWellness();
         state.goalProgress = loadGoalProgress();
         state.money = loadMoney();
@@ -14845,6 +14949,22 @@ function userIsEditing() {
    it ends. `changedWhileHidden` is cleared only by a reload that actually runs.
    Frames are folded: a burst is one reload, and reloads are at least SYNC_GAP_MS
    apart, so two devices can never bounce reloads off each other faster than that. */
+/* Reminders and habits only, straight into the phone's alarm queue, with no repaint:
+   what syncFromElsewhere can't do while it waits. A reminder made on the laptop
+   while Settings was open (or the app was in the background) waited for the
+   dialog to close, then for the app to be reopened, and never rang on the phone. */
+async function refreshAlarmInputs() {
+  if (!localNotificationsAvailable() || !alarmInputsLoaded) return;
+  try {
+    const [reminders, habits] = await Promise.all([api('/api/reminders'), api('/api/habits')]);
+    state.reminders = reminders;
+    state.habits = habits;
+    reSyncDeviceAlarms();
+  } catch (_) {
+    /* offline or asleep: the reload owed (changedWhileHidden) catches up later */
+  }
+}
+
 const SYNC_GAP_MS = 5000;
 let syncTimer = 0;
 let lastSyncAt = 0;

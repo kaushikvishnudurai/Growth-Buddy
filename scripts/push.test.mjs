@@ -16,6 +16,7 @@ import {
   upcomingWaterAlarms,
   upcomingHabitAlarms,
   upcomingAlarms,
+  ringRef,
   usualDrinkHours,
   isQuietAt,
   notificationActionTypes,
@@ -35,6 +36,7 @@ import {
   nativePlugin,
   deepLinkHash,
   scheduleLocalNotifications,
+  RING_CHANNEL,
 } from './native.js';
 
 // Wednesday, 09:00 local.
@@ -80,6 +82,17 @@ assert.equal(
   upcomingReminderAlarms([{ id: 'a', text: 'late', date: '2026-09-16', time: '09:20', repeat: 'none', notifyBefore: 30 }], NOW)[0].at.getMinutes(),
   20
 );
+/* ...unless its early alert is already in the shade: a re-sync rang it twice. */
+assert.equal(
+  upcomingReminderAlarms(
+    [{ id: 'a', text: 'late', date: '2026-09-16', time: '09:20', repeat: 'none', notifyBefore: 30 }],
+    NOW,
+    1,
+    0,
+    new Set(['late · at 09:20'])
+  ).length,
+  0
+);
 
 /* A snooze rings once more at snoozedUntil; one already past rings nothing. */
 {
@@ -91,6 +104,8 @@ assert.equal(
   assert.deepEqual(bodies(q), ['snoozed']);
   assert.equal(q[0].title, 'Snoozed reminder');
   assert.equal(q[0].at.getMinutes(), 10);
+  // The key the phone's own re-armed copy shares, so only one of them rings (GbRing).
+  assert.equal(q[0].extra.snoozeAt, new Date(2026, 8, 16, 9, 10).getTime());
 }
 
 /* No time = an all-day note on the calendar. 00:00 would ring at midnight. */
@@ -695,3 +710,72 @@ console.log('push.test.mjs: first alarm per tone keeps its channel passed');
   globalThis.window = saved;
 }
 console.log('push.test.mjs: own-sound channel always built with its sound passed');
+
+/* Ringing like an alarm: only reminders carry `ring`, never water or habits,
+   and Silent stays a quiet card. The ref is what RingService can play: the
+   built-in tone's file, an own sound's channel id, else the default channel. */
+{
+  const opts = {
+    reminders: [
+      { id: 'a', text: 'loud', date: '2026-09-16', time: '18:00', repeat: 'none' },
+      { id: 'b', text: 'hush', date: '2026-09-16', time: '19:00', repeat: 'none', sound: 'off' },
+    ],
+    water: { on: true, everyMins: 120, from: '09:00', to: '21:00' },
+    habits: [{ id: 'h', name: 'Read', reminderTime: '20:00', active: true }],
+    sound: 'marimba',
+  };
+  const off = upcomingAlarms(opts, NOW);
+  assert.ok(off.every((n) => !n.extra || !n.extra.ring), 'no ring unless asked');
+  const q = upcomingAlarms(Object.assign({}, opts, { ring: true }), NOW);
+  const loud = q.find((n) => n.body === 'loud');
+  assert.equal(loud.extra.ring, 'gb_marimba.wav');
+  assert.equal(loud.extra.kind, 'reminder', 'the buttons still know what they act on');
+  assert.ok(!q.find((n) => n.body === 'hush').extra.ring, 'Silent never rings');
+  assert.ok(q.filter((n) => n.extra && n.extra.kind !== 'reminder').every((n) => !n.extra.ring), 'nudges never ring');
+  assert.equal(ringRef({ sound: undefined, channelId: 'gb-tone-custom-cafe0001-r2' }), 'gb-tone-custom-cafe0001-r2');
+  assert.equal(ringRef({ sound: undefined, channelId: 'gb-tone-default' }), 'gb-tone-default');
+  assert.equal(ringRef({ channelId: SILENT_CHANNEL }), null);
+}
+console.log('push.test.mjs: alarm-style ring only on loud reminders');
+
+/* A ringing reminder posts on RING_CHANNEL (built natively, so never through
+   createChannel), while its own sound's channel is still built: that writes the
+   file RingService plays. */
+{
+  const saved = globalThis.window;
+  const plain = [];
+  const own = [];
+  const scheduled = [];
+  const LocalNotifications = {
+    createChannel: (c) => (plain.push(c.id), Promise.resolve()),
+    schedule: ({ notifications }) => (scheduled.push(...notifications), Promise.resolve()),
+  };
+  const CustomNotificationSound = { ensureChannel: (c) => (own.push(c.id), Promise.resolve()) };
+  globalThis.window = { Capacitor: { Plugins: { LocalNotifications, CustomNotificationSound } } };
+  assert.ok(
+    await scheduleLocalNotifications([
+      {
+        id: 9,
+        title: 't',
+        body: 'b',
+        channelId: 'gb-tone-custom-feed0001-r2',
+        customSound: { name: 'Mine', url: 'data:audio/webm;base64,AAAA' },
+        extra: { kind: 'reminder', id: 'r', ring: 'gb-tone-custom-feed0001-r2' },
+      },
+    ])
+  );
+  assert.equal(scheduled[0].channelId, RING_CHANNEL);
+  assert.deepEqual(own, ['gb-tone-custom-feed0001-r2']);
+  assert.equal(scheduled[0].extra.ringFallback, 'gb-tone-custom-feed0001-r2', 'a ring that cannot start re-posts with its own sound');
+  // An own sound the phone could not build: ring and fallback both go to the default.
+  assert.ok(
+    await scheduleLocalNotifications([
+      { id: 10, title: 't', body: 'b', channelId: 'gb-tone-custom-dead0002-r2', extra: { kind: 'reminder', id: 'r', ring: 'gb-tone-custom-dead0002-r2' } },
+    ])
+  );
+  assert.equal(scheduled[1].extra.ring, 'gb-tone-default');
+  assert.equal(scheduled[1].extra.ringFallback, 'gb-tone-default');
+  assert.ok(!plain.includes(RING_CHANNEL), 'the ring channel is never built by the plugin');
+  globalThis.window = saved;
+}
+console.log('push.test.mjs: a ringing card goes on the ring channel');

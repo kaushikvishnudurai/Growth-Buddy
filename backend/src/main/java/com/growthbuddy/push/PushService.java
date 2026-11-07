@@ -191,14 +191,19 @@ public class PushService {
             }
             try {
                 Subscription sub = new Subscription(s.getEndpoint(), new Subscription.Keys(s.getP256dh(), s.getAuth()));
-                var response = pushService.send(new Notification(sub, payload));
+                // aes128gcm (RFC 8291): the library's default, the old aesgcm, builds a
+                // Crypto-Key header FCM now refuses with 403, so no web push ever arrived.
+                var response = pushService.send(new Notification(sub, payload), nl.martijndwars.webpush.Encoding.AES128GCM);
                 int code = response.getStatusLine().getStatusCode();
                 if (code == 404 || code == 410) {
                     repo.delete(s); // subscription is gone; stop trying it
                 } else if (code >= 200 && code < 300) {
                     sent++;
                 } else {
-                    log.warn("Push to {} returned {}", userId, code);
+                    // The push service's reason (FCM: "the key in the authorization header does not
+                    // correspond to the sender ..."): a bare 403 could not be told apart from any other.
+                    String why = response.getEntity() == null ? "" : org.apache.http.util.EntityUtils.toString(response.getEntity());
+                    log.warn("Push to {} returned {}: {}", userId, code, why.length() > 300 ? why.substring(0, 300) : why);
                 }
             } catch (Exception e) {
                 log.warn("Push send failed for user {}: {}", userId, e.getMessage());

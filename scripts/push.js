@@ -29,12 +29,22 @@ import {
   SILENT_CHANNEL,
   versionedChannel,
   pruneCustomChannels,
+  deliveredLocalBodies,
 } from './native.js';
 import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './water-stats.js';
 import { SOUNDS, customChime, customChimes } from './chime.js';
 import { localKey as dayKey } from './dates.js';
 import { onBreakDay } from './break.js';
+
+/* Why push can't be turned on here, in words. A plain-http address (the phone on
+   the Mac's Wi-Fi IP) hides service workers, and "this browser doesn't support it"
+   sent people looking through settings for a switch that isn't there. */
+export function pushUnsupportedMessage() {
+  return typeof window !== 'undefined' && window.isSecureContext === false
+    ? 'Notifications need a secure (https) address. Open the Growth Buddy app, or this site over https.'
+    : 'This browser doesn’t support push notifications.';
+}
 
 export function pushSupported() {
   if (localNotificationsAvailable()) return true;
@@ -92,7 +102,12 @@ export async function enablePush(api) {
   if (permission !== 'granted') return 'denied';
 
   try {
-    const reg = await navigator.serviceWorker.ready;
+    // `ready` never settles without an active worker (Vite dev has none, a failed
+    // install leaves none), and the button just sat there. Give up into 'error'.
+    const reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, no) => setTimeout(() => no(new Error('no service worker')), 10000)),
+    ]);
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       sub = await reg.pushManager.subscribe({
@@ -206,19 +221,23 @@ function atOn(day, minutes) {
  * `ReminderPrefs.leadFor` on the server. A lead can put tomorrow's 00:10 on
  * tonight. A snoozed reminder also rings at `snoozedUntil`.
  */
-export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, lead = 0) {
+export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, lead = 0, shown = new Set()) {
   const out = [];
   for (const rem of reminders || []) {
     const snoozed = rem && rem.snoozedUntil ? new Date(rem.snoozedUntil) : null;
     if (snoozed && snoozed.getTime() > now.getTime()) {
       // No day: which occurrence a snooze belongs to isn't known here, so its
       // Done just clears the card rather than guessing a day to check off.
+      const buttons = reminderButtons(rem, null);
+      // `snoozeAt`: the phone re-arms a snooze pressed on the card too, and the
+      // patched plugin (GbRing) posts whichever of the two copies fires first.
+      if (buttons.extra) buttons.extra.snoozeAt = snoozed.getTime();
       out.push({
         title: 'Snoozed reminder',
         body: rem.text,
         at: snoozed,
         sound: rem.sound || null,
-        ...reminderButtons(rem, null),
+        ...buttons,
       });
     }
   }
@@ -240,7 +259,9 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, lead
       let at = atOn(day, hh * 60 + mm - ahead);
       // The early ring has gone but the reminder hasn't: ring on time instead
       // (the server does the same for one made inside its own lead).
-      if (ahead && at.getTime() <= now.getTime()) {
+      // Not when that early alert is already in the shade (`shown`, its body): a
+      // re-sync between the two rang the same reminder twice.
+      if (ahead && at.getTime() <= now.getTime() && !shown.has(rem.text + ' \u00b7 at ' + String(rem.time).slice(0, 5))) {
         ahead = 0;
         at = atOn(day, hh * 60 + mm);
       }
@@ -482,12 +503,21 @@ export function alarmTone(key = deviceTone !== undefined ? deviceTone : toneSour
  * project's res/raw (gen-chimes.mjs writes both), and `channelId` names the
  * channel we build it into — see native.js for why we can't let the plugin do it.
  */
-export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, breakPrefs } = {}, now = new Date()) {
+/* What the phone's RingService plays when a reminder rings like an alarm: the
+   built-in tone's res/raw file, else the own sound's channel id (its file is
+   named after it), else the default channel's (the phone's own sound). Null
+   for Silent, which stays a quiet card. */
+export function ringRef(tone) {
+  if (!tone || tone.channelId === SILENT_CHANNEL) return null;
+  return tone.sound || tone.channelId || null;
+}
+
+export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, breakPrefs, ring, shown } = {}, now = new Date()) {
   // Quiet hours drop the water nudge and habit reminders, never a reminder the
   // user timed themselves (isQuietAt). A break (ui_prefs.breakFrom..breakUntil,
   // break.js) drops habit alarms on its days, the same as the server's.
   const loud = (n) => !isQuietAt(quiet, n.at);
-  const queue = upcomingReminderAlarms(reminders, now, HORIZON_DAYS, lead)
+  const queue = upcomingReminderAlarms(reminders, now, HORIZON_DAYS, lead, shown)
     .concat(upcomingWaterAlarms(water, now).filter(loud))
     .concat(upcomingHabitAlarms(habits, now).filter((n) => loud(n) && !onBreakDay(breakPrefs, dayKey(n.at))));
   queue.sort((a, b) => a.at - b.at);
@@ -511,7 +541,13 @@ export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, b
     used.add(id);
     // Each reminder's own tone if it set one, the user's default otherwise.
     // The water nudge never sets one, so it always follows the default.
-    return Object.assign(n, { id }, alarmTone(n.sound || sound));
+    const tone = alarmTone(n.sound || sound);
+    // `ring` (ui_prefs.reminderRing, Android): a reminder rings like an alarm,
+    // its tone played on the alarm stream by RingService (native.js posts the
+    // card on RING_CHANNEL). Never a water or habit nudge.
+    const r = ring && n.extra && n.extra.kind === 'reminder' ? ringRef(tone) : null;
+    if (r) n.extra = Object.assign({}, n.extra, { ring: r });
+    return Object.assign(n, { id }, tone);
   });
 }
 
@@ -547,7 +583,7 @@ async function syncNow(opts) {
   // Cheap and idempotent; redone per sync because the Snooze label follows
   // the user's snooze length.
   await registerNotificationActions(notificationActionTypes(opts && opts.snoozeLabel));
-  const queue = upcomingAlarms(opts, new Date());
+  const queue = upcomingAlarms({ ...opts, shown: await deliveredLocalBodies() }, new Date());
   // A deleted sound's channel would sit in the phone's Settings forever.
   await pruneCustomChannels(customChimes().map((c) => customChannel(c)));
   // Cancel first: an edited or deleted reminder must not keep its old alarm,

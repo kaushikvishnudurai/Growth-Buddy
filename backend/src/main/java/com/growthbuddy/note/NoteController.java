@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -23,10 +24,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class NoteController {
 
     private final NoteService service;
+    private final NoteDraftEvents draftEvents;
 
-    public NoteController(NoteService service) {
+    public NoteController(NoteService service, NoteDraftEvents draftEvents) {
         this.service = service;
+        this.draftEvents = draftEvents;
     }
+
+    /* Every draft write tells the user's other sessions (NoteDraftEvents), after
+       the service's transaction has committed, so the GET they make reads it. */
+    private static final String CLIENT = "X-GB-Client";
+    private static final String DEVICE = "X-GB-Device";
 
     /** The main list; {@code ?archived=true} is the Archived view instead. */
     @GetMapping
@@ -56,14 +64,26 @@ public class NoteController {
 
     @PutMapping("/draft")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void saveDraft(@Valid @RequestBody NoteDraftRequest req) {
-        service.saveDraft(CurrentUser.id(), req);
+    public void saveDraft(@Valid @RequestBody NoteDraftRequest req,
+                          @RequestHeader(value = CLIENT, required = false) String origin,
+                          @RequestHeader(value = DEVICE, required = false) String device) {
+        UUID user = CurrentUser.id();
+        service.saveDraft(user, req);
+        draftEvents.changed(user, null, origin, device);
     }
 
     @DeleteMapping("/draft")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteDraft() {
-        service.deleteDraft(CurrentUser.id());
+    public void deleteDraft(@RequestHeader(value = CLIENT, required = false) String origin) {
+        UUID user = CurrentUser.id();
+        service.deleteDraft(user);
+        draftEvents.changed(user, null, origin, null);
+    }
+
+    /** Which notes have unsaved edits ({@code noteId}, {@code updatedAt}), for the cards' Draft mark. */
+    @GetMapping("/edit-drafts")
+    public List<NoteEditDraftMark> editDrafts() {
+        return service.editDraftMarks(CurrentUser.id());
     }
 
     @GetMapping("/{id}")
@@ -80,14 +100,21 @@ public class NoteController {
 
     @PutMapping("/{id}/draft")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void saveEditDraft(@PathVariable UUID id, @Valid @RequestBody NoteDraftRequest req) {
-        service.saveEditDraft(CurrentUser.id(), id, req);
+    public void saveEditDraft(@PathVariable UUID id, @Valid @RequestBody NoteDraftRequest req,
+                              @RequestHeader(value = CLIENT, required = false) String origin,
+                              @RequestHeader(value = DEVICE, required = false) String device) {
+        UUID user = CurrentUser.id();
+        service.saveEditDraft(user, id, req);
+        draftEvents.changed(user, id, origin, device);
     }
 
     @DeleteMapping("/{id}/draft")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteEditDraft(@PathVariable UUID id) {
-        service.deleteEditDraft(CurrentUser.id(), id);
+    public void deleteEditDraft(@PathVariable UUID id,
+                                @RequestHeader(value = CLIENT, required = false) String origin) {
+        UUID user = CurrentUser.id();
+        service.deleteEditDraft(user, id);
+        draftEvents.changed(user, id, origin, null);
     }
 
     /** Undo a delete (soft, so nothing was lost). */
@@ -103,8 +130,14 @@ public class NoteController {
     }
 
     @PatchMapping("/{id}")
-    public NoteResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateNoteRequest req) {
-        return service.update(CurrentUser.id(), id, req);
+    public NoteResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateNoteRequest req,
+                               @RequestHeader(value = CLIENT, required = false) String origin) {
+        UUID user = CurrentUser.id();
+        NoteResponse saved = service.update(user, id, req);
+        // A title or body save drops the note's edit draft (NoteService.update):
+        // other sessions showing it as a draft re-read it and let it go.
+        if (req.title() != null || req.body() != null) draftEvents.changed(user, id, origin, null);
+        return saved;
     }
 
     @DeleteMapping("/{id}")

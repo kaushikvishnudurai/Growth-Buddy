@@ -33,6 +33,9 @@ record NoteDraftRequest(
 }
 
 /** {@code labels}: an edit draft's chips ([] = all removed); null = none stored, leave the note's. */
+/** One note with unsaved edits: the cards' Draft mark (GET /api/notes/edit-drafts). */
+record NoteEditDraftMark(UUID noteId, Instant updatedAt) {}
+
 record NoteDraftResponse(String title, String body, String color, Instant updatedAt, List<String> labels) {
     static NoteDraftResponse from(NoteDraft d) {
         return new NoteDraftResponse(d.getTitle(), d.getBody(), d.getColor(), d.getUpdatedAt(), null);

@@ -19,6 +19,8 @@ import {
   sameZone,
   firstRunSteps,
   pushAskDue,
+  tourDue,
+  firstSlot,
   noonIn,
   SAVED_ON_PHONE,
   savedLocallyMessage,
@@ -425,6 +427,23 @@ await test('push is asked once, at a timed save, only when it can help', () => {
   assert.equal(pushAskDue({ ...due, supported: false }), false, 'no notifications here');
   assert.equal(pushAskDue({ ...due, subscribed: true }), false, 'already on');
   assert.equal(pushAskDue({ ...due, permission: 'denied' }), false, 'already refused');
+});
+
+await test('the tour shows once, to a new account only', () => {
+  assert.equal(tourDue({ prefs: {}, hasData: false }), true, 'a brand-new account');
+  assert.equal(tourDue({ prefs: null, hasData: false }), true, 'no prefs yet');
+  assert.equal(tourDue({ prefs: { tourDone: true }, hasData: false }), false, 'finished or skipped');
+  assert.equal(tourDue({ prefs: {}, hasData: true }), false, 'an account with data predates it');
+  assert.equal(tourDue({ prefs: { tourStarted: true }, hasData: true }), true, 'closed mid-tour after its reminder step: resume');
+  assert.equal(tourDue({ prefs: { tourStarted: true, tourDone: true }, hasData: true }), false);
+});
+
+await test('the tour offers a first reminder time that has not passed', () => {
+  assert.deepEqual(firstSlot('08:15'), { tomorrow: false, time: '09:00' });
+  assert.deepEqual(firstSlot('22:59'), { tomorrow: false, time: '23:00' });
+  assert.deepEqual(firstSlot('23:20'), { tomorrow: true, time: '09:00' }, 'no whole hour left today');
+  assert.deepEqual(firstSlot('00:05'), { tomorrow: false, time: '01:00' });
+  assert.deepEqual(firstSlot(''), { tomorrow: true, time: '09:00' }, 'no clock: a safe default');
 });
 
 await test('a backdated entry is filed at noon of that day in the account zone', () => {
