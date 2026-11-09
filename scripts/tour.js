@@ -5,7 +5,8 @@
    then the permissions with the reason for each, asked only here and only on a
    tap. Lazy (app.js openTour), so it never joins the boot chunk. app.js hands
    in what it owns (adding a reminder, the push flow, prefs) and records
-   `tourDone` when it closes, by any way out. Settings › Reminders replays it.
+   `tourDone` when it closes, by any way out. Back steps through it again;
+   the reminder made on step 2 is not made twice.
    ===================================================================== */
 
 import { h, Icon, refreshIcons, openOverlay, segmented } from './gb-kit.js';
@@ -18,7 +19,7 @@ import { pushSupported, pushSubscribed } from './push.js';
  * Open the tour. `ctx`: { todayKey, nowHHMM (the account's clock),
  * addReminder(key, text, time) -> created|null, enablePushFlow(msg) -> bool,
  * saveUiPrefs, snoozeMinutes(), minutesLabel(m), ringRow() (the Settings
- * switch, ring-row.js), replay, onClose() }.
+ * switch, ring-row.js), onClose() }.
  */
 export function openTour(ctx) {
   const { sheet, close } = openOverlay({
@@ -29,15 +30,22 @@ export function openTour(ctx) {
 
   const steps = [welcomeStep, reminderStep, repeatStep, snoozeStep, alertsStep, doneStep];
   let at = 0;
+  let added = null; // the first reminder's text, once made: Back must not make it again
   const stepLabel = h('div', { class: 'gb-setup-count' });
   const dots = h('div', { class: 'gb-setup-dots', 'aria-hidden': 'true' }, ...steps.map(() => h('span', { class: 'gb-setup-dot' })));
   const titleEl = h('div', { class: 'gb-modal-title', tabindex: '-1' });
   const subEl = h('div', { class: 'gb-modal-sub' });
   const bodyEl = h('div', { class: 'gb-modal-body' });
+  const backBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--ghost gb-tour-back', onclick: () => back() },
+    Icon('chevron-left', { size: 16 }),
+    'Back'
+  );
   const primaryBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-tour-next' });
   const skipBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel' });
   sheet.append(
-    h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-setup-top' }, stepLabel, dots), titleEl, subEl),
+    h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-setup-top' }, h('div', { class: 'gb-tour-where' }, backBtn, stepLabel), dots), titleEl, subEl),
     bodyEl,
     primaryBtn,
     skipBtn
@@ -49,9 +57,16 @@ export function openTour(ctx) {
     show();
   }
 
+  function back() {
+    if (at === 0) return;
+    at -= 1;
+    show();
+  }
+
   function show() {
     const s = steps[at]();
     stepLabel.textContent = 'Step ' + (at + 1) + ' of ' + steps.length;
+    backBtn.hidden = at === 0;
     [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i <= at));
     titleEl.textContent = s.title;
     subEl.textContent = s.sub;
@@ -112,6 +127,14 @@ export function openTour(ctx) {
       day,
       (v) => (day = v)
     );
+    if (added) {
+      return {
+        title: 'Your first reminder',
+        sub: 'Added. You will find it on Home and in Calendar.',
+        body: h('ul', { class: 'gb-tour-points' }, point('check', added)),
+        primary: 'Next',
+      };
+    }
     const err = h('div', { class: 'gb-field-error', role: 'alert' });
     text.oninput = () => (err.textContent = '');
     return {
@@ -137,7 +160,9 @@ export function openTour(ctx) {
           return false;
         }
         // addReminder says what went wrong (a time already past) in its own toast.
-        return !!(await ctx.addReminder(day, text.value.trim(), time.value || null));
+        const ok = !!(await ctx.addReminder(day, text.value.trim(), time.value || null));
+        if (ok) added = text.value.trim();
+        return ok;
       },
       skip: 'Skip this step',
     };
@@ -240,9 +265,7 @@ export function openTour(ctx) {
   function doneStep() {
     return {
       title: 'You’re ready',
-      sub: ctx.replay
-        ? 'That’s the tour. It is in Settings › Reminders whenever you want it again.'
-        : 'Next, pick what you want to work on, and we’ll set up a few habits for it.',
+      sub: 'Next, pick what you want to work on, and we’ll set up a few habits for it.',
       body: badge('check'),
       primary: 'Let’s go',
     };

@@ -5,10 +5,9 @@
 
      1. Every screen loads clean (console errors, pageerrors, HTTP >= 400,
         horizontal overflow).
-     2. Settings › Reminders: the new "The tour" block and its "Take the tour
-        again" button; the Ring row is absent on the web (Android-only).
-     3. The tour, replayed: all six steps walk forward, the real first
-        reminder it adds lands on Home, and closing records tourDone.
+     2. Settings › Reminders: no "Take the tour again" (the tour is
+        first-run only, so a seeded account never sees it); the Ring row is
+        absent on the web (Android-only).
      4. Reminder notes on Home (dashboard.js NotesLine): a reminder seeded
         with notes shows the clamped line, the tap expands it in place, and
         the full text is there for a screen reader.
@@ -145,69 +144,11 @@ await page.evaluate(() =>
 await sleep(600);
 await shot(page, 'settings-reminders');
 
-const tourBtn = await page.evaluateHandle(() =>
-  [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Take the tour again')
+const tourBtn = await page.evaluate(() =>
+  [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Take the tour again')
 );
-check(await tourBtn.evaluate((b) => !!b), 'settings: "Take the tour again" button present');
+check(!tourBtn, 'settings: no "Take the tour again" (the tour is first-run only)');
 check(!(await page.$('.gb-ring-row')), 'settings: no Ring row on the web (Android-only)');
-
-/* --- 3. the tour, replayed -------------------------------------------------- */
-console.log('\n== tour replay ==');
-await tourBtn.evaluate((b) => b.click());
-await page.waitForSelector('.gb-tour', { timeout: 8000 });
-await sleep(600);
-await shot(page, 'tour-1-welcome');
-
-const tourText = () => page.evaluate(() => document.querySelector('.gb-tour .gb-modal-title').textContent);
-check((await tourText()) === 'Welcome to Growth Buddy', 'tour: step 1 is the welcome');
-
-const clickPrimary = () => page.evaluate(() => document.querySelector('.gb-tour .gb-tour-next').click());
-
-await clickPrimary(); // -> first reminder
-await sleep(400);
-check((await tourText()) === 'Your first reminder', 'tour: step 2 is the first reminder');
-
-await clickPrimary(); // empty text refuses
-await sleep(400);
-check((await tourText()) === 'Your first reminder', 'tour: empty reminder text refuses to move on');
-const errShown = await page.evaluate(() => {
-  const e = document.querySelector('.gb-tour .gb-field-error');
-  return !!e && e.textContent.trim().length > 0;
-});
-check(errShown, 'tour: the refusal says why');
-
-const TOUR_TEXT = 'E2E tour reminder ' + (Date.now() % 100000);
-await page.fill('#gb-tour-text', TOUR_TEXT);
-await clickPrimary();
-await sleep(1500);
-check((await tourText()) === 'Repeats', 'tour: adding the first reminder moves on');
-await shot(page, 'tour-3-repeats');
-
-await clickPrimary(); // -> done/snooze
-await sleep(400);
-check((await tourText()) === 'Done and Snooze', 'tour: step 4 is Done and Snooze');
-await clickPrimary(); // -> alerts
-await sleep(800);
-check((await tourText()) === 'How reminders reach you', 'tour: step 5 is the permissions');
-await shot(page, 'tour-5-alerts');
-await clickPrimary(); // -> done
-await sleep(400);
-check((await tourText()) === 'You’re ready', 'tour: step 6 is the close');
-await clickPrimary();
-await sleep(1000);
-check(!(await page.$('.gb-tour')), 'tour: closes after the last step');
-
-const meR = await apiGet('/api/auth/me');
-const me = meR.ok ? await meR.json() : null;
-const tourDone = me && !!(me.uiPrefs || {}).tourDone;
-check(tourDone === true, 'tour: closing recorded tourDone' + (me ? '' : ' (could not read /api/users/me: HTTP ' + meR.status + ')'));
-
-/* The reminder the tour made is on Home. */
-await page.evaluate(() => (location.hash = '#/home'));
-await sleep(1800);
-const homeHasTourRem = await page.evaluate((t) => document.body.textContent.includes(t), TOUR_TEXT);
-check(homeHasTourRem, 'tour: its reminder shows on Home');
-await shot(page, 'home-with-tour-reminder');
 
 /* --- 4. reminder notes on Home ---------------------------------------------- */
 console.log('\n== reminder notes ==');

@@ -2439,8 +2439,8 @@ function maybeStartFirstRun() {
   setTimeout(openFirstRunSetup, 600);
 }
 
-/* The tour (tour.js, lazy): a new account's, before first-run setup, or a
-   replay from Settings › Reminders. firstRunOpen holds while it is up, so the
+/* The tour (tour.js, lazy): a new account's, before first-run setup. There is
+   no replay (taken out of Settings › Reminders). firstRunOpen holds while it is up, so the
    first reminder it adds doesn't stack the push ask over it (askPushOnce): the
    tour asks with its reason, on a tap. Any way out records `tourDone`. */
 let tourOpen = false;
@@ -2468,7 +2468,6 @@ async function openTour({ thenSetup = false } = {}) {
     snoozeMinutes,
     minutesLabel,
     ringRow: () => ringSettingRow(),
-    replay: !thenSetup,
     onClose: () => {
       tourOpen = false;
       firstRunOpen = false;
@@ -8769,7 +8768,7 @@ function settingsContext() {
     adoptServerMoney, reloadMoneyFromServer, persistMoney, saveMoney, saveUiPrefs, notifySound, readCustomChimes, storeCustomChimes,
     newSoundId, todayKey, syncUserSession, enablePushFlow, api, withPendingWater, invalidateWeek,
     pickedTheme, setThemeChoice, notifyMuted, keyOfDate, shortDay, reminderQuickAdd, uploadNewCustomSound,
-    openIcsImportDialog, snoozeMinutes, ringSettingRow, openTour, cancelReminderSnooze, waterReminderPrefs,
+    openIcsImportDialog, snoozeMinutes, ringSettingRow, cancelReminderSnooze, waterReminderPrefs,
     reSyncDeviceAlarms, deleteReminder, deleteReminders, editReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
     featureSwitchRow, lazyScreen, repaintOverlays, privacyLink, otpBoxes, logout, endSession, render,
     breakPrefs, breakUntilLabel, takeBreak, endBreakNow,

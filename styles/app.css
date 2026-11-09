@@ -2593,6 +2593,22 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 
 /* ---- First-run tour (tour.js), on the setup sheet's parts ---- */
+.gb-tour-where {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gb-tour-where .gb-setup-count,
+.gb-setup-modal .gb-tour-back {
+  white-space: nowrap;
+}
+/* Back sits on the step count's line; hidden on step 1. */
+.gb-tour-back {
+  min-height: 32px;
+  padding: 4px 8px 4px 2px;
+  margin-left: -2px;
+  gap: 2px;
+}
 .gb-tour-next {
   width: 100%;
   margin-top: 14px;
