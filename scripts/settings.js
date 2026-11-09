@@ -35,6 +35,7 @@ import {
   leadLabel,
   minutesLabel,
   TAGS,
+  openEditDialog,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { disablePush, pushSubscribed, pushSupported, pushTestLocal, pushUnsupportedMessage } from './push.js';
@@ -101,6 +102,8 @@ let PREMIUM_KEY,
   waterReminderPrefs,
   reSyncDeviceAlarms,
   deleteReminder,
+  deleteReminders,
+  editReminder,
   openModal,
   segmented,
   relativeTime,
@@ -163,6 +166,8 @@ function bind(ctx) {
     waterReminderPrefs,
     reSyncDeviceAlarms,
     deleteReminder,
+    deleteReminders,
+    editReminder,
     openModal,
     segmented,
     relativeTime,
@@ -1590,6 +1595,19 @@ function reminderSettingsPane() {
   const list = h('div', { class: 'gb-remset-list', role: 'list' });
   let armed = null;
   let armTimer = null;
+  // Select mode: tick rows, then delete them in one go (one Undo).
+  let selecting = false;
+  const picked = new Set();
+  const selectBtn = h('button', {
+    type: 'button',
+    class: 'gb-btn gb-btn--ghost gb-btn--sm',
+    onclick: () => {
+      selecting = !selecting;
+      picked.clear();
+      paintList();
+    },
+  });
+  const bulkBar = h('div', { class: 'gb-remset-bulk' });
 
   function row(rem, next) {
     const tag = TAGS[rem.tag] || TAGS.other;
@@ -1609,6 +1627,32 @@ function reminderSettingsPane() {
     }
     const snoozed = rem.snoozedUntil && new Date(rem.snoozedUntil).getTime() > Date.now();
     const isArmed = armed === rem.id;
+    const pick = selecting
+      ? h('input', {
+          type: 'checkbox',
+          class: 'gb-remset-pick',
+          checked: picked.has(rem.id),
+          'aria-label': 'Select ' + rem.text,
+          onchange: (e) => {
+            if (e.currentTarget.checked) picked.add(rem.id);
+            else picked.delete(rem.id);
+            paintBulk();
+          },
+        })
+      : null;
+    // An ended series has no day ahead: edit it from the day it started.
+    const edit = selecting
+      ? null
+      : h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--icon',
+            'aria-label': 'Edit ' + rem.text,
+            onclick: () => openEditDialog(rem, next || rem.date, editReminder),
+          },
+          Icon('pencil', { size: 15 })
+        );
     const del = h(
       'button',
       {
@@ -1645,6 +1689,7 @@ function reminderSettingsPane() {
         dataset: { id: rem.id },
         style: { '--tag-color': tag.color },
       },
+      pick,
       h('span', { class: 'gb-rem-accent' }),
       h(
         'div',
@@ -1666,8 +1711,54 @@ function reminderSettingsPane() {
             )
           : null
       ),
-      del
+      edit,
+      selecting ? null : del
     );
+  }
+
+  function paintBulk() {
+    const ids = (state.reminders || []).map((r) => r.id);
+    for (const id of [...picked]) if (!ids.includes(id)) picked.delete(id);
+    selectBtn.textContent = selecting ? 'Done' : 'Select';
+    selectBtn.style.display = ids.length ? '' : 'none';
+    if (!selecting || !ids.length) {
+      bulkBar.replaceChildren();
+      return;
+    }
+    const allOn = picked.size === ids.length;
+    bulkBar.replaceChildren(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--sm',
+          onclick: () => {
+            if (allOn) picked.clear();
+            else ids.forEach((id) => picked.add(id));
+            paintList();
+          },
+        },
+        allOn ? 'Clear' : 'Select all'
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--danger gb-btn--sm',
+          disabled: !picked.size,
+          onclick: () => {
+            const chosen = [...picked];
+            selecting = false;
+            picked.clear();
+            // Repaints this list through repaintReminderSettings.
+            deleteReminders(chosen);
+          },
+        },
+        Icon('trash-2', { size: 15 }),
+        picked.size ? 'Delete ' + picked.size : 'Delete'
+      )
+    );
+    refreshIcons();
   }
 
   function paintList() {
@@ -1684,6 +1775,7 @@ function reminderSettingsPane() {
         ? all.map((x) => row(x.r, x.next))
         : [h('div', { class: 'gb-sound-empty' }, 'No reminders yet. Add one above.')])
     );
+    paintBulk();
     refreshIcons();
   }
   // Only while this pane is in the page: a closed Settings must not keep a
@@ -1712,14 +1804,15 @@ function reminderSettingsPane() {
       'How long Snooze waits before it rings again. It’s on the reminder in the app, on its notification, and on WhatsApp — tap Snooze there, or reply SNOOZE (or “snooze 20”).'
     ),
     h('div', { class: 'gb-remset-picker gb-remset-picker--5' }, snoozePicker.node),
-    ringBlock,
+    ...(ringBlock ? [ringBlock] : []),
     h(
       'div',
       { class: 'gb-sounds-head', style: { marginTop: '22px' } },
       h('h3', { class: 'gb-settings-sec-label', style: { margin: 0 } }, 'Your reminders'),
-      count
+      h('span', { class: 'gb-remset-head-end' }, count, selectBtn)
     ),
     addForm,
+    bulkBar,
     list,
     h('h3', { class: 'gb-settings-sec-label' }, 'The tour'),
     h('div', { class: 'gb-field-hint' }, 'A minute on reminders, repeats, Done and Snooze, and the permissions that make them ring.'),

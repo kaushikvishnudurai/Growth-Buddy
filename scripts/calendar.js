@@ -2863,6 +2863,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 
 export {
   openRoutineDialog,
+  openEditDialog,
   UsualTimeChip,
   clearReminderForm,
   isPastSlot,

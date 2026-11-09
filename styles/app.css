@@ -14758,6 +14758,26 @@ button.gb-sound-name:focus-visible {
   padding: 10px 0;
   border-top: 1px solid var(--border);
 }
+.gb-remset-head-end {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.gb-remset-bulk {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.gb-remset-bulk:empty {
+  display: none;
+}
+.gb-remset-pick {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--brand);
+}
 .gb-remset-row:first-child {
   border-top: none;
 }

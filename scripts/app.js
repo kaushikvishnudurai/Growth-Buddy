@@ -8770,7 +8770,7 @@ function settingsContext() {
     newSoundId, todayKey, syncUserSession, enablePushFlow, api, withPendingWater, invalidateWeek,
     pickedTheme, setThemeChoice, notifyMuted, keyOfDate, shortDay, reminderQuickAdd, uploadNewCustomSound,
     openIcsImportDialog, snoozeMinutes, ringSettingRow, openTour, cancelReminderSnooze, waterReminderPrefs,
-    reSyncDeviceAlarms, deleteReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
+    reSyncDeviceAlarms, deleteReminder, deleteReminders, editReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
     featureSwitchRow, lazyScreen, repaintOverlays, privacyLink, otpBoxes, logout, endSession, render,
     breakPrefs, breakUntilLabel, takeBreak, endBreakNow,
   };
@@ -10031,6 +10031,7 @@ async function editReminder(scope, id, occKey, patch) {
       state.reminders = await api('/api/reminders');
     }
     reSyncDeviceAlarms();
+    repaintReminderSettings();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
       repaintCalendarGrid();
@@ -10044,44 +10045,63 @@ async function editReminder(scope, id, occKey, patch) {
   }
 }
 
+/* Whole series, any number at once, under one Undo toast (Settings' Select
+   mode deletes many; the single delete is a list of one). */
+function repaintAfterReminderDelete() {
+  reSyncDeviceAlarms();
+  repaintReminderSettings();
+  if (state.screen === 'calendar') {
+    rerenderCalendarSideIfActive();
+    repaintCalendarGrid();
+  } else {
+    render();
+  }
+}
+
+function deleteReminders(ids) {
+  ids = ids.filter((id) => state.reminders.some((r) => r.id === id));
+  if (!ids.length) return;
+  const slots = ids.map((id) => listSlot(() => state.reminders, (l) => (state.reminders = l), id));
+  deferDelete({
+    message: ids.length === 1 ? 'Reminder deleted.' : ids.length + ' reminders deleted.',
+    errorText: ids.length === 1 ? 'Could not delete reminder.' : 'Could not delete those reminders.',
+    paint: repaintAfterReminderDelete,
+    remove: () => slots.forEach((s) => s.remove()),
+    // Reverse order, so each goes back at the index it was taken from.
+    restore: () => slots.slice().reverse().forEach((s) => s.restore()),
+    // ponytail: one DELETE per id, in order; a server error mid-way puts all back
+    // locally and the next load shows what really went. A bulk endpoint if lists get long.
+    commit: async () => {
+      for (const id of ids) {
+        const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?scope=all';
+        // Offline (or its create still queued): the DELETE waits in the outbox.
+        const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
+        if (isTempId(realId(id))) {
+          await queue();
+          continue;
+        }
+        try {
+          await api(path, { method: 'DELETE', keepalive: true });
+        } catch (err) {
+          if (!networkError(err)) throw err;
+          await queue();
+        }
+      }
+      if (state.user) reSyncDeviceAlarms();
+    },
+  });
+}
+
 // scope: 'all' | 'this' | 'future' | 'before'
 async function deleteReminder(scope, id, occKey) {
-  const repaint = () => {
-    reSyncDeviceAlarms();
-    repaintReminderSettings();
-    if (state.screen === 'calendar') {
-      rerenderCalendarSideIfActive();
-      repaintCalendarGrid();
-    } else {
-      render();
-    }
-  };
+  const repaint = repaintAfterReminderDelete;
   const whole = (scope || 'all') === 'all';
   // Deleting the whole series is the one case whose outcome we can work out
   // locally, so it is undoable: the row goes now and the request follows the
   // toast. The occurrence scopes depend on the server's skip list, so they
   // still wait for the refetch.
   if (whole) {
-    if (!state.reminders.some((r) => r.id === id)) return;
-    deferDelete({
-      message: 'Reminder deleted.',
-      errorText: 'Could not delete reminder.',
-      paint: repaint,
-      ...listSlot(() => state.reminders, (l) => (state.reminders = l), id),
-      commit: async () => {
-        const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?scope=all';
-        // Offline (or its create still queued): the DELETE waits in the outbox.
-        const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
-        if (isTempId(realId(id))) return queue();
-        try {
-          await api(path, { method: 'DELETE', keepalive: true });
-        } catch (err) {
-          if (!networkError(err)) throw err;
-          return queue();
-        }
-        if (state.user) reSyncDeviceAlarms();
-      },
-    });
+    deleteReminders([id]);
     return;
   }
   const previous = state.reminders;
