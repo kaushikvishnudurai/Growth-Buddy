@@ -9,6 +9,7 @@ import com.growthbuddy.push.PushService;
 import com.growthbuddy.reminder.ReminderDispatchLog;
 import com.growthbuddy.reminder.ReminderDispatchLogRepository;
 import com.growthbuddy.reminder.ReminderPrefs;
+import com.growthbuddy.user.FeatureLocks;
 import com.growthbuddy.user.User;
 import java.time.Duration;
 import java.time.Instant;
@@ -112,6 +113,8 @@ public class ReflectionScheduler {
 
     private boolean deliverIfDue(User u, Instant now) {
         if (u.getDeletionRequestedAt() != null || !u.isEmailVerified()) return false;
+        // Buddy switched off (by the user or an operator lock): no card that opens a screen they can't reach.
+        if (!FeatureLocks.on(u, "mentor")) return false;
         LocalTime at = timeOf(u.getUiPrefs());
         ZoneId zone = UserZone.of(u.getTimezone());
         ZonedDateTime local = now.atZone(zone);

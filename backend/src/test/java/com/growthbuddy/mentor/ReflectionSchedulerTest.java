@@ -142,6 +142,19 @@ class ReflectionSchedulerTest {
     }
 
     @Test
+    void buddySwitchedOffGetsNoReflection() {
+        // The switch and an operator lock both route through FeatureLocks.on.
+        Instant now = Instant.parse("2026-10-10T15:30:00Z");
+        User kolkata = user("Asia/Kolkata", "21:00");
+        kolkata.setFeaturePrefs(new HashMap<>(Map.of("mentor", false)));
+        stub(kolkata);
+        when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        assertThat(job.run(now)).isZero();
+        verify(push, never()).sendToUser(any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
     void oneAlreadySentTodayIsNotSentAgainAfterARestart() {
         Instant now = Instant.parse("2026-10-10T15:30:00Z");
         User kolkata = user("Asia/Kolkata", "21:00");
