@@ -94,6 +94,7 @@ class ReflectionSchedulerTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("Buddy retired 2026-11-10 (FeatureLocks.RETIRED): nothing is sent; re-enable with it")
     void oneTickPicksOnlyTheUsersWhoseLocalTimeHasCome() {
         // 15:30 UTC = 21:00 in Kolkata, 11:30 in New York, 16:30 in London (still BST on 10 Oct).
         Instant now = Instant.parse("2026-10-10T15:30:00Z");
@@ -124,6 +125,7 @@ class ReflectionSchedulerTest {
 
     /** I-08: no evening reflection on a break day (the user's local day). */
     @Test
+    @org.junit.jupiter.api.Disabled("Buddy retired 2026-11-10 (FeatureLocks.RETIRED): nothing is sent; re-enable with it")
     void aBreakDayGetsNoReflection() {
         // 15:30 UTC = 21:00 on 10 Oct in Kolkata; the break covers that local day only.
         Instant now = Instant.parse("2026-10-10T15:30:00Z");

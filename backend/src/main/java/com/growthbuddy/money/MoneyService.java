@@ -27,7 +27,7 @@ public class MoneyService {
 
     /** Warm money coach. Mirrors the Mentor's tone: encouraging, never guilt. */
     private static final String ADVISOR_PROMPT = """
-            You are Buddy, a warm, honest money coach inside the Growth Buddy app.
+            You are a warm, honest money coach inside the Growth Buddy app.
             The user is weighing a purchase. Using their item, price, stated reason,
             and money context, give a genuine second opinion — not a reflexive no.
             Lead with a clear recommendation (e.g. "Go for it", "Maybe sleep on it",

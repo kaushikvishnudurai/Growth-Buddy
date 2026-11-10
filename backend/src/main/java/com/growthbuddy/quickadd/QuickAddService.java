@@ -70,7 +70,7 @@ public class QuickAddService {
             below ("$12" -> "USD", "20 euros" -> "EUR"); null when none was named or it is theirs.
               {"type":"note","text":"..."}                  "note: ...", "jot down ...", an idea to keep
               {"type":"focus","minutes":<int 1-240>|null}   "start a 25 minute focus", "pomodoro"
-              {"type":"open","screen":"home|money|calendar|notes|goals|habits|food|summary|focus|report|family|circle|mentor|achievements|settings"}
+              {"type":"open","screen":"home|money|calendar|notes|goals|habits|food|summary|focus|report|family|circle|achievements|settings"}
                                                             "open money", "show my calendar", "take me to notes"
               {"type":"setting","key":"theme","value":"dark|light|system"}
               {"type":"setting","key":"waterGoal","value":<ml 500-6000>}
@@ -219,7 +219,7 @@ public class QuickAddService {
     private static final Set<String> TAGS = Set.of("work", "personal", "health", "urgent", "other");
     private static final Set<String> MEALS = Set.of("breakfast", "lunch", "dinner", "snack");
     private static final Set<String> SCREENS = Set.of("home", "money", "calendar", "notes", "goals", "habits",
-            "food", "summary", "focus", "report", "family", "circle", "mentor", "achievements", "settings");
+            "food", "summary", "focus", "report", "family", "circle", "achievements", "settings");
     private static final Set<String> THEMES = Set.of("dark", "light", "system");
     private static final Pattern ISO_CURRENCY = Pattern.compile("[A-Z]{3}");
     /** How far back a "yesterday"/"on Monday" log may land; older is a misread, not a log. */

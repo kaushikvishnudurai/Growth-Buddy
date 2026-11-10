@@ -487,7 +487,8 @@ const NAV_PRIMARY = [
   { id: 'habits', icon: 'repeat', label: 'Habits', feature: 'habits', group: 'plan' },
   // Labels match each screen's own header, so the tab name and the page
   // title never disagree ("Mentor" used to open a screen called "Buddy").
-  { id: 'mentor', icon: 'sparkles', label: 'Buddy', feature: 'mentor', group: 'people' },
+  // ponytail: Buddy (AI mentor chat) retired 2026-11-10, hidden not deleted; restore this line,
+  // the FEATURE_DEFS row in app.js and drop RETIRED_FEATURES there + FeatureLocks.RETIRED to bring it back.
   { id: 'report', icon: 'chart-column', label: 'Progress', feature: 'report', group: 'track' },
 ];
 const NAV_OVERFLOW = [

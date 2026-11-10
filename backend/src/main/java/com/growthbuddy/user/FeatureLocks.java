@@ -40,6 +40,9 @@ public class FeatureLocks {
     public static final Set<String> FEATURES = Set.of("report", "habits", "food", "water", "health", "goals",
             "notes", "money", "focus", "calendar", "mentor", "circle", "family");
 
+    /** Off for everyone in code, no lock row needed: Buddy (the AI mentor chat), retired 2026-11-10. */
+    static final Set<String> RETIRED = Set.of("mentor");
+
     public record Lock(String feature, String userId, String reason) {}
 
     private record Snapshot(Set<String> everyone, Map<String, Set<String>> perUser) {}
@@ -56,6 +59,7 @@ public class FeatureLocks {
     public static Set<String> lockedFor(UUID userId) {
         Snapshot s = snapshot;
         Set<String> out = new TreeSet<>(s.everyone());
+        out.addAll(RETIRED);
         if (userId != null) {
             out.addAll(s.perUser().getOrDefault(userId.toString(), Set.of()));
         }
@@ -64,7 +68,7 @@ public class FeatureLocks {
 
     public static boolean isLocked(UUID userId, String feature) {
         Snapshot s = snapshot;
-        return s.everyone().contains(feature)
+        return RETIRED.contains(feature) || s.everyone().contains(feature)
                 || (userId != null && s.perUser().getOrDefault(userId.toString(), Set.of()).contains(feature));
     }
 

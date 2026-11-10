@@ -28,15 +28,18 @@ class FeatureLockTest {
 
     @Test
     void aLockForcesTheFeatureOffWhateverTheUserChose() {
-        FeatureLocks.use(List.of(new Lock("money", "*", null), new Lock("mentor", ANA.toString(), "abuse")));
+        FeatureLocks.use(List.of(new Lock("money", "*", null), new Lock("circle", ANA.toString(), "abuse")));
 
         Map<String, Boolean> ana = FeatureLocks.effective(ANA, Map.of("money", true, "habits", false));
-        assertThat(ana).containsEntry("money", false).containsEntry("mentor", false).containsEntry("habits", false);
-        assertThat(FeatureLocks.lockedFor(ANA)).containsExactly("mentor", "money");
+        assertThat(ana).containsEntry("money", false).containsEntry("circle", false).containsEntry("habits", false);
+        assertThat(FeatureLocks.lockedFor(ANA)).containsExactly("circle", "mentor", "money");
 
-        // Ben has only the everyone lock, and the user's prefs map is not mutated.
-        assertThat(FeatureLocks.effective(BEN, null)).isEqualTo(Map.of("money", false));
-        assertThat(FeatureLocks.isLocked(BEN, "mentor")).isFalse();
+        // Ben has only the everyone lock plus the retired feature, and the user's prefs map is not mutated.
+        assertThat(FeatureLocks.effective(BEN, null)).isEqualTo(Map.of("money", false, "mentor", false));
+        assertThat(FeatureLocks.isLocked(BEN, "circle")).isFalse();
+        // Retired: off for everyone with no lock row at all.
+        FeatureLocks.use(List.of());
+        assertThat(FeatureLocks.isLocked(BEN, "mentor")).isTrue();
     }
 
     @Test

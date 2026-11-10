@@ -4874,7 +4874,6 @@ const SCREEN_LABEL = {
   health: 'Health',
   family: 'Family',
   circle: 'Circle',
-  mentor: 'Buddy',
   achievements: 'Achievements',
   settings: 'Settings',
 };
@@ -8157,13 +8156,6 @@ function takeMentorStarter() {
   return n.body || '';
 }
 
-/** The bell's evening-reflection card: open Buddy with its question in the box. */
-function openReflectionCard(n) {
-  mentorStarter = n.body || '';
-  markNotificationRead(n.id);
-  state.notifOpen = false;
-  setScreen('mentor', { force: true });
-}
 
 /** Settings › Alerts' "Evening reflection" value, for Buddy's chat sheet. */
 function reflectionLabel() {
@@ -11570,7 +11562,7 @@ function notificationDropdown() {
           {
             class: 'gb-notif-body',
             // Buddy's evening reflection opens the chat with its question ready.
-            ...activate(() => (n.kind === 'buddy_checkin' ? openReflectionCard(n) : markNotificationRead(n.id))),
+            ...activate(() => markNotificationRead(n.id)),
           },
           h('div', { class: 'gb-notif-title' }, n.title),
           n.body ? h('div', { class: 'gb-notif-sub' }, n.body) : null,
@@ -12091,7 +12083,6 @@ const FEATURE_DEFS = [
   { key: 'money', label: 'Money Buddy', desc: 'Expenses, budgets & AI money coach' },
   { key: 'focus', label: 'Focus timer', desc: 'Pomodoro & ambient sounds' },
   { key: 'calendar', label: 'Calendar & reminders', desc: 'Plan ahead & get reminders' },
-  { key: 'mentor', label: 'AI mentor', desc: 'Chat with your AI buddy' },
   { key: 'circle', label: 'Growth circle', desc: 'Connect with mentors' },
   { key: 'family', label: 'Family', desc: 'Family profiles & AI meal planner' },
 ];
@@ -12109,7 +12100,10 @@ const SCREEN_FEATURE = {
   circle: 'circle',
   family: 'family',
 };
+// Off for everyone and never offered (see gb-kit.js NAV_PRIMARY).
+const RETIRED_FEATURES = new Set(['mentor']);
 function featureOn(key) {
+  if (RETIRED_FEATURES.has(key)) return false;
   const f = state.user && state.user.features;
   return !f || f[key] !== false;
 }

@@ -83,7 +83,7 @@ final class QuickAddFallback {
             Map.entry("notes", "notes"), Map.entry("goals", "goals"), Map.entry("habits", "habits"),
             Map.entry("food", "food"), Map.entry("focus", "focus"), Map.entry("timer", "focus"),
             Map.entry("report", "report"), Map.entry("progress", "report"), Map.entry("family", "family"),
-            Map.entry("circle", "circle"), Map.entry("buddy", "mentor"), Map.entry("chat", "mentor"),
+            Map.entry("circle", "circle"),
             Map.entry("achievements", "achievements"), Map.entry("badges", "achievements"),
             Map.entry("settings", "settings"), Map.entry("food summary", "summary"), Map.entry("nutrition", "summary"));
 
