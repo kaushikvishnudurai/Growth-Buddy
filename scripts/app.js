@@ -196,6 +196,7 @@ import {
   publicSiteUrl,
   capturePlugin,
   onSharedText,
+  sharePlugin,
   canRingLikeAlarm,
 } from './native.js';
 import { launchIntent } from './launch-intent.js';
@@ -4234,17 +4235,56 @@ async function syncCapturesFromPhone() {
   }
 }
 
-/* Text another app shared in (at launch, or live through onSharedText): its own
-   path, so neither Money being off nor a failed capture upload can lose it. */
+/* Text or a picture another app shared in (at launch, or live through
+   onSharedText): its own path, so neither Money being off nor a failed capture
+   upload can lose it. GbShare is the share plugin; GbCapture shared text too. */
 async function takeSharedFromPhone() {
-  const plugin = capturePlugin();
-  if (!state.user || !plugin) return;
-  try {
-    const shared = await plugin.takeShared();
-    if (shared && shared.text) await handleSharedText(shared.text);
-  } catch (err) {
-    console.warn('Shared text not read:', err && err.message);
+  if (!state.user) return;
+  for (const plugin of [sharePlugin(), capturePlugin()]) {
+    if (!plugin) continue;
+    try {
+      const shared = await plugin.takeShared();
+      if (shared && shared.image) {
+        const blob = await (await fetch(shared.image)).blob();
+        await handleSharedImage(new File([blob], 'shared-image', { type: shared.type || blob.type }));
+      } else if (shared && shared.text) await handleSharedText(shared.text);
+    } catch (err) {
+      console.warn('Share not read:', err && err.message);
+    }
   }
+}
+
+/* A picture shared in: a payment screenshot (GPay, PhonePe, Paytm, a bank's
+   "paid" screen) or a shop receipt. Money's receipt reader turns it into
+   expenses the user checks before saving; nothing is written until then.
+   ponytail: straight to the receipt reader, not the Photo sheet's three-way
+   pick; a shared meal photo would need that sheet (snap.js) if it ever shows up. */
+function handleSharedImage(file) {
+  if (!featureOn('money')) {
+    pushToast('Turn on Money in Settings to log a payment screenshot.', 'info', 6000);
+    return;
+  }
+  return SNAP_ROUTES.receipt(file);
+}
+
+/* The picture the service worker is holding for a web share (/?share=image,
+   public/share-target.js). Asked for at boot, before the worker can be stopped;
+   null when it no longer has one. */
+function sharedImageFromWorker() {
+  if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+  return navigator.serviceWorker.ready
+    .then(
+      (reg) =>
+        new Promise((resolve) => {
+          const worker = navigator.serviceWorker.controller || reg.active;
+          if (!worker) return resolve(null);
+          const ch = new MessageChannel();
+          ch.port1.onmessage = (e) => resolve((e.data && e.data.file) || null);
+          worker.postMessage({ type: 'gb-share-image' }, [ch.port2]);
+          setTimeout(() => resolve(null), 5000);
+        })
+    )
+    .catch(() => null);
 }
 
 /* Automatic capture's setup on its own sheet, opened from Money (the same section
@@ -8445,11 +8485,18 @@ let returnToScreen = '';
    waits for the sign-in's first load. */
 let pendingLaunch = launchIntent(window.location.search);
 if (pendingLaunch) history.replaceState(null, '', window.location.pathname + window.location.hash);
+const sharedImage = pendingLaunch && pendingLaunch.shareImage ? sharedImageFromWorker() : null;
 
 function runLaunchIntent() {
   const it = pendingLaunch;
   pendingLaunch = null;
   if (!it) return;
+  if (it.shareImage) {
+    sharedImage.then((file) =>
+      file ? handleSharedImage(file) : toastError(null, 'That picture did not come through. Share it again.')
+    );
+    return;
+  }
   if (it.share) {
     // A bank or UPI message is captured (with Undo); other words go through
     // Quick add's own preview, where nothing is written until the user confirms.

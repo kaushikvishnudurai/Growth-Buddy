@@ -89,17 +89,22 @@ public class MoneyService {
     public record AdviceResult(boolean configured, String advice) {}
 
     private static final String RECEIPT_PROMPT = """
-            You read a photo of a shop receipt or bill and list what was bought.
+            You read a photo of a shop receipt or bill and list what was bought. It may instead be a
+            payment screenshot: a UPI app (GPay, PhonePe, Paytm, BHIM) or a bank's "payment successful"
+            screen.
             Return strict JSON only: {"items":[{"name":"Milk 1L","amount":56.00,"category":"food"}],"date":"2026-10-08","merchant":"Shop name"}
 
             Rules:
-            - One item per purchased line. amount is that line's total price as a number, no currency symbol.
-            - Leave out subtotal, total, amount paid, change, card or UPI lines, and loyalty points.
+            - A payment screenshot is ONE item: name = who was paid, or the payment's note when it says
+              what it was for; amount = the amount paid; merchant = who was paid; date = the payment's date.
+              A screen for money received (not sent), or a failed or pending payment: {"items":[],"date":null,"merchant":null}.
+            - On a receipt, one item per purchased line. amount is that line's total price as a number, no currency symbol.
+            - On a receipt, leave out subtotal, total, amount paid, change, card or UPI lines, and loyalty points.
             - Tax, service charge, delivery fee and tip are items of their own, so the items add up to the bill's total.
             - A discount is a negative amount on its own line.
             - name is short and readable (expand obvious abbreviations), at most 40 characters.
             - date is the bill's date as YYYY-MM-DD, or null when none is printed. merchant is null when unclear.
-            - Not a receipt, or nothing legible: {"items":[],"date":null,"merchant":null}.
+            - Neither a receipt nor a payment screenshot, or nothing legible: {"items":[],"date":null,"merchant":null}.
             - category is the key of the user's category that fits the item best, judged from the item
               and the shop (groceries and dishes are food, a cab or fuel is transport). Use "others" only
               when nothing fits. Tax, fees and tip take the category of the bill's main items.
@@ -119,7 +124,7 @@ public class MoneyService {
         try {
             StringBuilder prompt = new StringBuilder(RECEIPT_PROMPT);
             categories.forEach((k, v) -> prompt.append("- ").append(k).append(" = ").append(v).append('\n'));
-            String raw = openai.completeWithImage(prompt.toString(), "Read this receipt. Strict JSON only.", imageDataUrl);
+            String raw = openai.completeWithImage(prompt.toString(), "Read this receipt or payment screenshot. Strict JSON only.", imageDataUrl);
             return parseReceipt(json.readTree(OpenAIClient.jsonOf(raw)), categories.keySet());
         } catch (Exception ex) {
             log.warn("Receipt scan failed, falling back to manual entry: {}", ex.getMessage());

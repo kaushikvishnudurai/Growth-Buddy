@@ -24,4 +24,7 @@ assert.deepEqual(launchIntent('?title=same&text=same'), { share: 'same' }, 'iden
 assert.deepEqual(launchIntent('?text=++'), null, 'blank share is nothing');
 assert.equal(launchIntent('?text=' + 'a'.repeat(900)).share.length, SHARE_MAX, 'long share is cut');
 
+assert.deepEqual(launchIntent('?share=image'), { shareImage: true }, 'a shared picture');
+assert.equal(launchIntent('?share=video'), null, 'only a picture');
+
 console.log('launch-intent: ok');

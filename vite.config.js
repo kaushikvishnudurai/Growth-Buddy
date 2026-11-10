@@ -19,7 +19,7 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
    A literal is readable by any build anywhere, which is the whole requirement.
 
    GB_BUILD=<n> in the environment overrides it for a one-off build. */
-const BUILD = 127;
+const BUILD = 128;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
 /* The public site, for what has to be an absolute URL: canonical, og:url,
@@ -129,11 +129,14 @@ export default defineConfig({
           { name: 'Quick add', short_name: 'Quick add', description: 'Log anything in one line', url: '/?shortcut=quickadd', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
         ],
         // "Share to Growth Buddy" from another app: the text lands in Quick add's
-        // preview, and nothing is written until the user confirms there.
+        // preview, and nothing is written until the user confirms there. A picture
+        // (a payment screenshot) opens Money's receipt reader. POST so it can carry
+        // the file; public/share-target.js in the worker answers it.
         share_target: {
-          action: '/',
-          method: 'GET',
-          params: { title: 'title', text: 'text', url: 'url' },
+          action: '/share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: { title: 'title', text: 'text', url: 'url', files: [{ name: 'image', accept: ['image/*'] }] },
         },
         // The richer install dialog. Real screens from a seeded test account.
         screenshots: [
@@ -194,7 +197,7 @@ export default defineConfig({
         navigateFallback: '/index.html',
         // Pull our Web Push 'push' / 'notificationclick' handlers into the
         // generated service worker (keeps Workbox precaching intact).
-        importScripts: ['/push-handlers.js'],
+        importScripts: ['/push-handlers.js', '/share-target.js'],
         runtimeCaching: [
           {
             // Anything hashed that escapes the precache (a chunk added by a

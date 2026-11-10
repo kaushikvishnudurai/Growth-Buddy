@@ -113,6 +113,10 @@ ponytail: local only — server-initiated pushes to the app need FCM + `@capacit
 phone app only) holds every `<input type=file capture>` click, asks again, and on "blocked" offers
 the app's settings page; the barcode scanner calls `cameraAskAgain()` after a NotAllowedError.
 
+## Share to Growth Buddy (`sharePlugin`)
+
+`sharePlugin()` = `nativePlugin('GbShare')` (Android, `com.growthbuddy.share.SharePlugin` in the mobile repo, MainActivity's `ACTION_SEND` image/* + text/plain filter; null on the web, iOS and an older APK). `takeShared()` → `{text}` or `{image: data URL, type}`, once. Its `shared` event (a share while the app is open) reaches the same `onSharedText(cb)`, which listens on GbShare and GbCapture both.
+
 ## Money's automatic capture (`capturePlugin`, `onSharedText`)
 
 `capturePlugin()` = `nativePlugin('GbCapture')` (Android only, `com.growthbuddy.capture` in the mobile

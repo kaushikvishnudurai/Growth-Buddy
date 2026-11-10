@@ -976,16 +976,27 @@ export function capturePlugin() {
   return nativePlugin('GbCapture');
 }
 
-/** Another app shared text in while this one was open: the plugin's 'shared' event. */
+/* "Share to Growth Buddy" on Android: the GbShare plugin (../Growth-Buddy-Mobile,
+   com.growthbuddy.share), text or a picture another app shared in.
+     takeShared() -> {text} | {image: data URL, type}, once; {} when nothing waits
+   Null off-device and in an APK built before it. */
+export function sharePlugin() {
+  if (!isNative()) return null;
+  return nativePlugin('GbShare');
+}
+
+/** Another app shared something in while this one was open: GbShare's (or GbCapture's) 'shared' event. */
 export function onSharedText(cb) {
-  if (!capturePlugin()) return;
+  if (!isNative()) return;
   const cap = window.Capacitor;
-  const registered = cap.Plugins && cap.Plugins.GbCapture;
-  try {
-    if (registered && typeof registered.addListener === 'function') registered.addListener('shared', cb);
-    else if (typeof cap.nativeCallback === 'function')
-      cap.nativeCallback('GbCapture', 'addListener', { eventName: 'shared' }, cb);
-  } catch (_) {
-    /* an APK without the plugin */
+  for (const name of ['GbShare', 'GbCapture']) {
+    if (!nativePlugin(name)) continue;
+    const registered = cap.Plugins && cap.Plugins[name];
+    try {
+      if (registered && typeof registered.addListener === 'function') registered.addListener('shared', cb);
+      else if (typeof cap.nativeCallback === 'function') cap.nativeCallback(name, 'addListener', { eventName: 'shared' }, cb);
+    } catch (_) {
+      /* an APK without the plugin */
+    }
   }
 }

@@ -256,7 +256,7 @@ it silently landed on Home. Don't reintroduce a second list.
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
 - **Automatic capture on the phone:** `syncCapturesFromPhone()` (after the first `loadData` and on every
-  return to the foreground) first runs `takeSharedFromPhone()` (a text shared in, into `handleSharedText`,
+  return to the foreground) first runs `takeSharedFromPhone()` (GbShare, then GbCapture: a text shared in, into `handleSharedText`; a picture, into `handleSharedImage` = Money's receipt reader,
   whatever Money's state; also on the plugin's live `shared` event via `onSharedText`), then with Money on:
   once per signed-in user aligns the phone's switches with the account's (`GET /api/capture` →
   `setSources`, `captureFlagsFor`), lazy-loads capture.js, sends what the native queue holds
