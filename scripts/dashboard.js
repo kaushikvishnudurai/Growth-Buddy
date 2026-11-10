@@ -2166,6 +2166,7 @@ function DayTimeline({
   onAddReminder,
   routine,
   onAddRoutine,
+  onReminderDone,
 }) {
   const today = todayKey();
   const nowMin = zoneParts(new Date());
@@ -2182,7 +2183,24 @@ function DayTimeline({
       time: r.time ? sharedFormatTime(r.time) : '',
       kind: 'reminder',
       done,
-      node: h('span', { class: 'gb-tl-dot', style: { '--tag-color': (TAGS[r.tag] || TAGS.other).color } }, Icon('bell', { size: 13, sw: 2.6 })),
+      // The bell ticks today's ring off (Undo in the toast), and back on.
+      node: onReminderDone
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-tl-dot gb-tl-dot--btn',
+              style: { '--tag-color': (TAGS[r.tag] || TAGS.other).color },
+              'aria-pressed': String(done),
+              'aria-label': (done ? 'Not done: ' : 'Done for today: ') + r.text,
+              onclick: () => {
+                onReminderDone(r.id, today, !done);
+                if (!done) toast.action(r.text + ' done for today.', 'Undo', () => onReminderDone(r.id, today, false));
+              },
+            },
+            Icon(done ? 'check' : 'bell', { size: 13, sw: 2.6 })
+          )
+        : h('span', { class: 'gb-tl-dot', style: { '--tag-color': (TAGS[r.tag] || TAGS.other).color } }, Icon('bell', { size: 13, sw: 2.6 })),
       title: r.text,
       sub: r.endTime ? 'Until ' + sharedFormatTime(r.endTime) : null,
       notes: r.notes,
@@ -3371,6 +3389,7 @@ function ScreenDashboard({
       onAddReminder,
       routine,
       onAddRoutine,
+      onReminderDone,
     });
   };
   const suggest = () => {
