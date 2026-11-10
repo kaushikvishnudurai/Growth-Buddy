@@ -1,13 +1,15 @@
 /* One camera button that routes itself: take a photo, and it lands in Money
    (receipt), Food (plate) or the pantry (groceries).
 
-   The sheet opens the moment the photo is taken with all three choices; the
-   AI's guess (/api/photo/route, <= ROUTE_MS) only highlights one of them. No
-   AI, a timeout or an unknown answer leaves none highlighted: the no-AI
-   fallback is the same three-choice picker, one tap either way.
+   The sheet opens the moment the photo is taken with all three choices. One AI
+   call (/api/photo/read) both guesses the kind and reads the photo as that
+   kind: the guess highlights a choice, and tapping it opens that screen with
+   the reading already done. A choice the AI didn't make reads the photo with
+   its own reader (a second call). No AI or an unknown answer leaves none
+   highlighted: the no-AI fallback is the same picker, one tap either way.
 
-   ponytail: auto-routing without the confirm tap is skipped, because a misroute
-   costs a second paid vision call. Add it once route accuracy is measured. */
+   ponytail: auto-routing without the confirm tap is skipped; a misroute still
+   needs the user's eye. Add it once guess accuracy is measured. */
 import { h, Icon, openOverlay, refreshIcons } from './gb-kit.js';
 
 export const KINDS = [
@@ -33,11 +35,14 @@ export const KINDS = [
     guess: 'Looks like groceries',
   },
 ];
-const ROUTE_MS = 4000;
-
 /** The server's guess, whitelisted: anything but the kinds offered is "no guess". */
 export function pickDefault(kind, kinds = KINDS) {
   return kinds.some((k) => k.kind === kind) ? kind : null;
+}
+
+/** /api/photo/read's answer for `kind`, or null when it read the photo as something else (or not at all). */
+export function readFor(kind, answer) {
+  return (answer && answer.kind === kind && answer[kind]) || null;
 }
 
 /** The choices to offer: only kinds with a route (a feature switched off has none). */
@@ -46,13 +51,14 @@ export function kindsFor(routes) {
 }
 
 /**
- * shrink(file) -> Promise<dataUrl>; api(path, init) -> Promise<json>;
- * routes: { receipt(file, shrunk), plate(file, shrunk), groceries(file, shrunk) },
- * where shrunk is the Promise of the shrunk data URL (shared, so it runs once).
- * A kind left out of routes is not offered. Call it straight from the tap: the
- * file picker needs the user's gesture, which an await before it would lose.
+ * shrink(file) -> Promise<dataUrl>; read(dataUrl, kinds) -> Promise<{kind, [kind]: answer}>
+ * (/api/photo/read); routes: { receipt, plate, groceries }, each (file, shrunk, done)
+ * where shrunk is the Promise of the shrunk data URL (shared, so it runs once)
+ * and done the Promise of that kind's reading, or null (then the route reads it
+ * itself). A kind left out of routes is not offered. Call it straight from the
+ * tap: the file picker needs the user's gesture, which an await before it would lose.
  */
-export function openSnap({ shrink, api, routes }) {
+export function openSnap({ shrink, read, routes }) {
   const input = h('input', {
     type: 'file',
     accept: 'image/*',
@@ -64,7 +70,7 @@ export function openSnap({ shrink, api, routes }) {
   input.addEventListener('change', () => {
     const file = input.files && input.files[0];
     drop();
-    if (file) routePhoto(file, { shrink, api, routes });
+    if (file) routePhoto(file, { shrink, read, routes });
   });
   document.body.appendChild(input);
   input.click();
@@ -74,12 +80,14 @@ export function openSnap({ shrink, api, routes }) {
  * The "Where should this go?" sheet for a photo already in hand: the camera's
  * (openSnap) or one another app shared in (app.js handleSharedImage).
  */
-export function routePhoto(file, { shrink, api, routes }) {
+export function routePhoto(file, { shrink, read, routes }) {
   const { sheet, close } = openOverlay({ label: 'Where should this photo go?' });
   const title = h('div', { class: 'gb-modal-title' }, 'Where should this go?');
   const sub = h('div', { class: 'gb-modal-sub' }, 'Reading the photo. Pick one any time.');
   const shrunk = shrink(file);
   const kinds = kindsFor(routes);
+  // The one call: which kind, and that kind's reading. Started before any tap.
+  const answer = shrunk.then((imageDataUrl) => read(imageDataUrl, kinds.map((k) => k.kind))).catch(() => null);
   const buttons = kinds.map((k) =>
     h(
       'button',
@@ -88,7 +96,7 @@ export function routePhoto(file, { shrink, api, routes }) {
         class: 'gb-modal-opt',
         onclick: () => {
           close();
-          routes[k.kind](file, shrunk);
+          routes[k.kind](file, shrunk, answer.then((a) => readFor(k.kind, a)));
         },
       },
       h('span', { class: 'gb-modal-opt-ic' }, Icon(k.icon, { size: 18 })),
@@ -111,14 +119,8 @@ export function routePhoto(file, { shrink, api, routes }) {
   );
   refreshIcons();
 
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), ROUTE_MS));
-  const guess = shrunk
-    .then((imageDataUrl) =>
-      api('/api/photo/route', { method: 'POST', body: JSON.stringify({ imageDataUrl }) })
-    )
-    .then((r) => pickDefault(r && r.kind, kinds));
-  Promise.race([guess, timeout])
-    .catch(() => null)
+  answer
+    .then((a) => pickDefault(a && a.kind, kinds))
     .then((kind) => {
       if (!sheet.isConnected) return;
       const i = kinds.findIndex((k) => k.kind === kind);

@@ -122,14 +122,24 @@ public class MoneyService {
             return new ReceiptScan(false, List.of(), null, null);
         }
         try {
-            StringBuilder prompt = new StringBuilder(RECEIPT_PROMPT);
-            categories.forEach((k, v) -> prompt.append("- ").append(k).append(" = ").append(v).append('\n'));
-            String raw = openai.completeWithImage(prompt.toString(), "Read this receipt or payment screenshot. Strict JSON only.", imageDataUrl);
+            String raw = openai.completeWithImage(receiptRules(categories), "Read this receipt or payment screenshot. Strict JSON only.", imageDataUrl);
             return parseReceipt(json.readTree(OpenAIClient.jsonOf(raw)), categories.keySet());
         } catch (Exception ex) {
             log.warn("Receipt scan failed, falling back to manual entry: {}", ex.getMessage());
             return new ReceiptScan(true, true, List.of(), null, null);
         }
+    }
+
+    /** The receipt reader's rules with the user's categories (also the one-call photo read's receipt part). */
+    public static String receiptRules(java.util.Map<String, String> categories) {
+        StringBuilder prompt = new StringBuilder(RECEIPT_PROMPT);
+        categories.forEach((k, v) -> prompt.append("- ").append(k).append(" = ").append(v).append('\n'));
+        return prompt.toString();
+    }
+
+    /** A receipt answer already in hand (the one-call photo read), through the same checks as scanReceipt. */
+    public static ReceiptScan receiptFrom(JsonNode node, java.util.Set<String> categories) {
+        return parseReceipt(node, categories);
     }
 
     /**

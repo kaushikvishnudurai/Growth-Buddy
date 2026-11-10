@@ -114,11 +114,17 @@ public class MoneyController {
         if (img == null || !img.startsWith("data:image/") || img.length() > 2_000_000) {
             throw ApiException.badRequest("imageDataUrl must be an image data URL under 2 MB");
         }
-        // The user's own categories, so the model can tag each line. These reach the
-        // prompt, so they are capped; an empty list still leaves "others".
+        return service.scanReceipt(img, cleanCategories(req.categories()));
+    }
+
+    /**
+     * The user's own categories, so the model can tag each line. These reach the
+     * prompt, so they are capped; an empty list still leaves "others".
+     */
+    public static java.util.Map<String, String> cleanCategories(java.util.List<ReceiptCategory> list) {
         java.util.Map<String, String> cats = new java.util.LinkedHashMap<>();
-        if (req.categories() != null) {
-            for (ReceiptCategory c : req.categories()) {
+        if (list != null) {
+            for (ReceiptCategory c : list) {
                 if (cats.size() >= 40) break;
                 if (c == null || c.key() == null || c.key().isBlank() || c.key().length() > 40
                         || c.key().matches("(?s).*\\s.*")) continue;
@@ -127,7 +133,7 @@ public class MoneyController {
             }
         }
         cats.putIfAbsent("others", "Others");
-        return service.scanReceipt(img, cats);
+        return cats;
     }
 
     public record ReceiptCategory(String key, String label) {}

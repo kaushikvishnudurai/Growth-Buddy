@@ -100,6 +100,7 @@ import {
   fmtIn,
   matchCaptured,
   claimCaptured,
+  mergedCats,
 } from './money-core.js';
 import { quickMoney, quickCategory, currencySymbol, intentDay, dayWord, stripEmoji, capitalise } from './quick-add.js';
 import {
@@ -4264,7 +4265,7 @@ function handleSharedImage(file) {
     pushToast('Turn on Money or Food in Settings to log a photo.', 'info', 6000);
     return;
   }
-  routePhoto(file, { shrink: shrinkForSnap, api, routes });
+  routePhoto(file, { shrink: shrinkForSnap, read: readPhoto, routes });
 }
 
 /* The picture the service worker is holding for a web share (/?share=image,
@@ -7186,7 +7187,8 @@ function openAddFood(opts) {
     });
   }
 
-  async function estimateFromPhoto(file = platePhotoInput.files && platePhotoInput.files[0]) {
+  // `done`: the photo sheet's reading of this plate (/api/photo/read), used instead of a second call.
+  async function estimateFromPhoto(file = platePhotoInput.files && platePhotoInput.files[0], done = null) {
     if (!file) {
       throw new Error('Please choose a photo first.');
     }
@@ -7198,15 +7200,17 @@ function openAddFood(opts) {
     }
     photoDataUrl = dataUrl;
 
-    const result = await api('/api/food/photo-estimate-multi', {
-      method: 'POST',
-      body: JSON.stringify({
-        imageDataUrl: photoDataUrl,
-        mealType: mealTypeSeg.get(),
-        portionSize: 'medium',
-        riceBase: 'unsure',
-      }),
-    });
+    const result =
+      (done && (await done)) ||
+      (await api('/api/food/photo-estimate-multi', {
+        method: 'POST',
+        body: JSON.stringify({
+          imageDataUrl: photoDataUrl,
+          mealType: mealTypeSeg.get(),
+          portionSize: 'medium',
+          riceBase: 'unsure',
+        }),
+      }));
 
     photoItems =
       result && result.items
@@ -7267,11 +7271,11 @@ function openAddFood(opts) {
     Icon('camera', { size: 16, sw: 2.2 }),
     'Scan a plate photo instead'
   );
-  async function estimatePlate(file) {
+  async function estimatePlate(file, read) {
     // One estimate at a time: a second tap mid-call used to send the photo twice.
     const done = setThinking(photoBtn, 'Looking at your plate');
     try {
-      await estimateFromPhoto(file);
+      await estimateFromPhoto(file, read);
     } catch {
       const safeMsg = 'Could not analyze photo. Please enter manually.';
       toastError({ message: safeMsg }, safeMsg);
@@ -7626,7 +7630,7 @@ function openAddFood(opts) {
     },
   });
 
-  if (opts && opts.file instanceof Blob) estimatePlate(opts.file);
+  if (opts && opts.file instanceof Blob) estimatePlate(opts.file, opts.done);
   else focusSoon(foodNameInput);
 }
 
@@ -10278,6 +10282,19 @@ const SNAP_FEATURE = { receipt: 'money', plate: 'food', groceries: 'family' };
     Groceries unless the user is in a family (the pantry is a family's; without
     one the scan 400s). `state.inFamily` comes from GET /api/family: after wave 2
     and whenever the Family screen reads it; unknown = not offered. */
+/* /api/photo/read: the photo sheet's one call (snap.js). Money's categories ride
+   along for the receipt reading, as requestReceiptScan sends them. */
+const readPhoto = (imageDataUrl, kinds) =>
+  api('/api/photo/read', {
+    method: 'POST',
+    body: JSON.stringify({
+      imageDataUrl,
+      kinds,
+      categories: kinds.includes('receipt')
+        ? mergedCats(normalizeMoney(state.money)).map((c) => ({ key: c.key, label: c.label }))
+        : [],
+    }),
+  });
 const snapRoutes = () =>
   Object.fromEntries(
     Object.entries(SNAP_ROUTES).filter(
@@ -10288,21 +10305,31 @@ const noteFamily = (r) => {
   state.inFamily = !!(r && r.familyId);
   return r;
 };
+/* Each route gets `done`, the Promise of /api/photo/read's reading for its kind
+   (snap.js), or null: then it reads the photo with its own reader. */
 const SNAP_ROUTES = {
-  receipt: (file) =>
-    import('./money.js').then((m) =>
-      m.openReceiptModal(state.money, saveMoney, requestReceiptScan, { file })
-    ),
-  plate: (file) => openAddFood({ file }),
+  receipt: (file, _shrunk, done) => {
+    // The handed-in reading is for this photo only: a Retake reads the new one.
+    let pre = done;
+    const scan = (f, cats) => {
+      const p = pre;
+      pre = null;
+      return p ? p.then((r) => r || requestReceiptScan(f, cats)) : requestReceiptScan(f, cats);
+    };
+    return import('./money.js').then((m) => m.openReceiptModal(state.money, saveMoney, scan, { file }));
+  },
+  plate: (file, _shrunk, done) => openAddFood({ file, done }),
   // The pantry is a family's: with no family the server 400s, and that message
   // plus a way to the Family tab is the answer.
-  groceries: async (_file, shrunk) => {
+  groceries: async (_file, shrunk, done) => {
     const toFamily = { label: 'View', run: () => setScreen('family') };
     try {
-      const res = await api('/api/family/pantry/scan', {
-        method: 'POST',
-        body: JSON.stringify({ imageDataUrl: await shrunk }),
-      });
+      const res =
+        (done && (await done)) ||
+        (await api('/api/family/pantry/scan', {
+          method: 'POST',
+          body: JSON.stringify({ imageDataUrl: await shrunk }),
+        }));
       const n = (res && res.added && res.added.length) || 0;
       const msg = n
         ? 'Added ' + plural(n, 'item') + ' to your pantry'
@@ -10490,7 +10517,7 @@ function openAddSheet(prefill) {
         close();
         // Static import: the camera opens inside this tap's gesture (WebKit
         // drops a file-input click that follows an await).
-        openSnap({ shrink: shrinkForSnap, api, routes });
+        openSnap({ shrink: shrinkForSnap, read: readPhoto, routes });
       },
     },
     {

@@ -104,38 +104,7 @@ public class FoodService {
                     + "\nRice hint: " + rice.name()
                     + "\nReturn strict JSON only with 'items', 'confidence', 'fallbackNeeded' keys.";
             String raw = openai.completeWithImage(PHOTO_AI_MULTI_PROMPT, userPrompt, req.imageDataUrl());
-            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
-
-            List<FoodItem> items = new ArrayList<>();
-            JsonNode itemsNode = node.path("items");
-            if (itemsNode.isArray()) {
-                for (JsonNode item : itemsNode) {
-                    String foodName = textOrNull(item, "foodName");
-                    Integer kcalPer100g = numberAsInt(item, "kcalPer100g");
-                    Integer quantityGrams = numberAsInt(item, "quantityGrams");
-                    
-                    if (StringUtils.hasText(foodName) && kcalPer100g != null && quantityGrams != null) {
-                        items.add(new FoodItem(
-                                foodName.trim(),
-                                clampQuantity(quantityGrams),
-                                clamp(kcalPer100g)
-                        ));
-                    }
-                }
-            }
-
-            double confidence = numberAsDouble(node, "confidence", 0.0);
-            boolean fallbackNeeded = node.path("fallbackNeeded").asBoolean(confidence < 0.70 || items.isEmpty());
-            String message = !items.isEmpty() 
-                    ? "Detected " + items.size() + " item(s) from photo."
-                    : "Image unclear. Please answer fallback questions.";
-
-            return new PhotoFoodEstimateMultiResponse(
-                    items,
-                    Math.max(0.0, Math.min(1.0, confidence)),
-                    fallbackNeeded,
-                    message,
-                    "ai-photo-multi");
+            return multiFrom(json.readTree(OpenAIClient.jsonOf(raw)));
         } catch (Exception ex) {
             log.warn("Photo multi-analysis fallback: AI image analysis failed", ex);
             return new PhotoFoodEstimateMultiResponse(
@@ -145,6 +114,49 @@ public class FoodService {
                     "Could not analyze photo. Please use fallback quick questions.",
                     "fallback");
         }
+    }
+
+    /** The plate reader's rules, for the one-call photo read (common/PhotoRouteController). */
+    public static String plateRules() {
+        return PHOTO_AI_MULTI_PROMPT;
+    }
+
+    /** A plate answer already in hand (the one-call photo read), through the same checks; a PhotoFoodEstimateMultiResponse. */
+    public Object plateFrom(JsonNode node) {
+        return multiFrom(node);
+    }
+
+    private PhotoFoodEstimateMultiResponse multiFrom(JsonNode node) {
+        List<FoodItem> items = new ArrayList<>();
+        JsonNode itemsNode = node.path("items");
+        if (itemsNode.isArray()) {
+            for (JsonNode item : itemsNode) {
+                String foodName = textOrNull(item, "foodName");
+                Integer kcalPer100g = numberAsInt(item, "kcalPer100g");
+                Integer quantityGrams = numberAsInt(item, "quantityGrams");
+                
+                if (StringUtils.hasText(foodName) && kcalPer100g != null && quantityGrams != null) {
+                    items.add(new FoodItem(
+                            foodName.trim(),
+                            clampQuantity(quantityGrams),
+                            clamp(kcalPer100g)
+                    ));
+                }
+            }
+        }
+
+        double confidence = numberAsDouble(node, "confidence", 0.0);
+        boolean fallbackNeeded = node.path("fallbackNeeded").asBoolean(confidence < 0.70 || items.isEmpty());
+        String message = !items.isEmpty() 
+                ? "Detected " + items.size() + " item(s) from photo."
+                : "Image unclear. Please answer fallback questions.";
+
+        return new PhotoFoodEstimateMultiResponse(
+                items,
+                Math.max(0.0, Math.min(1.0, confidence)),
+                fallbackNeeded,
+                message,
+                "ai-photo-multi");
     }
 
     private static final String PHOTO_AI_PROMPT = """

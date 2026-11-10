@@ -1180,29 +1180,7 @@ public class FamilyService {
             String raw = openai.completeWithImage(PANTRY_SCAN_PROMPT,
                     "List all items with category, quantity and any printed expiry date. Strict JSON only.",
                     req.imageDataUrl());
-            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
-            List<PantryItemResponse> added = new ArrayList<>();
-            LocalDate today = clock.today(userId);
-            for (JsonNode it : node.path("items")) {
-                String name = textOrNull(it, "name");
-                if (!StringUtils.hasText(name)) {
-                    continue;
-                }
-                FamilyPantryItem item = new FamilyPantryItem();
-                item.setFamilyId(fam.getId());
-                item.setName(trimTo(name, 120));
-                item.setCategory(trimTo(defaultText(textOrNull(it, "category"), "Other"), 32));
-                item.setQuantity(trimTo(defaultText(textOrNull(it, "quantity"), ""), 60));
-                item.setExpiryDate(parseDate(textOrNull(it, "expiry")));
-                pantry.save(item);
-                added.add(toPantryResponse(item, today));
-            }
-            if (!added.isEmpty()) {
-                changed(fam, userId, "pantry");
-            }
-            return new PantryScanResponse(added, added.size(), added.isEmpty(),
-                    added.isEmpty() ? "No items detected. Try a clearer photo." : "Added " + added.size() + " item(s) to your pantry.",
-                    "ai-pantry");
+            return addScanned(userId, fam, json.readTree(OpenAIClient.jsonOf(raw)));
         } catch (ApiException ex) {
             throw ex; // the AI budget's 429: says why, and keeps the current plan / list
         } catch (Exception ex) {
@@ -1210,6 +1188,44 @@ public class FamilyService {
             return new PantryScanResponse(List.of(), 0, true,
                     "Could not analyze the photo. Add items manually.", "fallback");
         }
+    }
+
+    /** The pantry scan's rules, for the one-call photo read (common/PhotoRouteController). */
+    public static String pantryRules() {
+        return PANTRY_SCAN_PROMPT;
+    }
+
+    /**
+     * A groceries answer already in hand (the one-call photo read): added to the
+     * caller's family pantry like a scan's; 400 with no family. A PantryScanResponse.
+     */
+    public Object pantryFrom(UUID userId, JsonNode node) {
+        return addScanned(userId, requireMyFamily(userId), node);
+    }
+
+    private PantryScanResponse addScanned(UUID userId, Family fam, JsonNode node) {
+        List<PantryItemResponse> added = new ArrayList<>();
+        LocalDate today = clock.today(userId);
+        for (JsonNode it : node.path("items")) {
+            String name = textOrNull(it, "name");
+            if (!StringUtils.hasText(name)) {
+                continue;
+            }
+            FamilyPantryItem item = new FamilyPantryItem();
+            item.setFamilyId(fam.getId());
+            item.setName(trimTo(name, 120));
+            item.setCategory(trimTo(defaultText(textOrNull(it, "category"), "Other"), 32));
+            item.setQuantity(trimTo(defaultText(textOrNull(it, "quantity"), ""), 60));
+            item.setExpiryDate(parseDate(textOrNull(it, "expiry")));
+            pantry.save(item);
+            added.add(toPantryResponse(item, today));
+        }
+        if (!added.isEmpty()) {
+            changed(fam, userId, "pantry");
+        }
+        return new PantryScanResponse(added, added.size(), added.isEmpty(),
+                added.isEmpty() ? "No items detected. Try a clearer photo." : "Added " + added.size() + " item(s) to your pantry.",
+                "ai-pantry");
     }
 
     // ---- Shopping list ----
