@@ -6745,11 +6745,20 @@ function openMoodCheckin() {
     ],
     existing.stress || 'normal'
   );
+  // The helpline card Buddy's chat used to be the only home of (crisis.js),
+  // shown while the note reads like a crisis. Lazy: the boot chunk is over budget.
+  const crisisSlot = h('div');
+  const checkCrisis = async () => {
+    const { crisisMatch, crisisCard } = await import('./crisis.js');
+    if (!crisisMatch(noteInput.value)) crisisSlot.replaceChildren();
+    else if (!crisisSlot.firstChild) crisisSlot.append(crisisCard());
+  };
   const noteInput = h(
     'textarea',
-    { class: 'gb-input gb-input--about', maxlength: '280', placeholder: 'Optional note' },
+    { class: 'gb-input gb-input--about', maxlength: '280', placeholder: 'Optional note', oninput: checkCrisis },
     existing.note || ''
   );
+  if (existing.note) checkCrisis();
   openModal({
     title: 'Mood check-in',
     sub: 'A quick signal for your weekly patterns.',
@@ -6763,7 +6772,8 @@ function openMoodCheckin() {
       h('div', { class: 'gb-field-label' }, 'Stress'),
       stress.node,
       h('div', { class: 'gb-field-label' }, 'Note'),
-      noteInput
+      noteInput,
+      crisisSlot
     ),
     primary: 'Save check-in',
     onPrimary: async () =>
