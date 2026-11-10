@@ -45,7 +45,7 @@ public class FoodWeek {
     static final List<String> KEYS = List.of("protein", "carbs", "fat", "fiber");
 
     private static final String PROMPT = """
-            You are Buddy, the nutrition coach inside the Growth Buddy app, and you know
+            You are the nutrition coach inside the Growth Buddy app, and you know
             Indian food well. You get the meals a user logged (over the last few days,
             or on one day — the Scope line says which), their estimated daily protein,
             carbs, fat and fibre against targets, their water against its goal when
@@ -411,8 +411,8 @@ public class FoodWeek {
         Map<LocalDate, List<FoodEntry>> byDay = day == null ? byDay(userId, today) : oneDay(userId, day);
         if (byDay.values().stream().allMatch(List::isEmpty)) {
             return new DietCheckResponse(null, null, null, null, null, day == null
-                    ? "Log a few meals this week and Buddy can tell you what your plate is missing."
-                    : "Nothing logged on this day yet. Add a meal and Buddy can read it.", List.of(), "rules");
+                    ? "Log a few meals this week to see what your plate is missing."
+                    : "Nothing logged on this day yet. Add a meal to get a read on it.", List.of(), "rules");
         }
         String label = day == null ? "Your week" : day.equals(today) ? "Today so far" : "That day";
         User u = users.findById(userId).orElse(null);

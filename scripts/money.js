@@ -4008,7 +4008,7 @@ function ScreenMoney({
       // Upgrade to a real, tailored opinion when the AI is available; the
       // heuristic above stays as the instant + offline fallback.
       if (typeof requestAdvice !== 'function') return;
-      const loading = Thinking('Asking Buddy for a closer look', [
+      const loading = Thinking('Taking a closer look', [
         'Looking at your budget',
         'Weighing the price against your goals',
         'Writing a closer look',
@@ -4032,7 +4032,7 @@ function ScreenMoney({
               'div',
               { class: 'gb-money-advice-verdict is-info' },
               Icon('sparkles', { size: 18, sw: 2.2 }),
-              "Buddy's take"
+              'A closer look'
             ),
             // The model answers in markdown; asterisks and #s read as noise in a plain <p>.
             h('p', { class: 'gb-money-coach-text', style: { marginTop: 'var(--space-2)' } }, String(res.advice).replace(/[*_#`]+/g, ''))
@@ -4053,7 +4053,7 @@ function ScreenMoney({
         onclick: evaluate,
       },
       Icon('sparkles', { size: 15, sw: 2.2 }),
-      'Ask the buddy'
+      'Take a closer look'
     );
     [price, reason].forEach((el) =>
       el.addEventListener('keydown', (e) => e.key === 'Enter' && evaluate())
@@ -4709,7 +4709,7 @@ function ScreenMoney({
           )
         : null,
       st.loading
-        ? Thinking('Buddy is reading your day', ['Reading your day', 'Sorting what you spent', 'Writing a note'])
+        ? Thinking('Reading your day', ['Reading your day', 'Sorting what you spent', 'Writing a note'])
         : st.error
           ? h(
               'p',
@@ -4732,7 +4732,7 @@ function ScreenMoney({
             ? h(
                 'p',
                 { class: 'gb-money-day-text' },
-                d.source === 'ai' ? h('span', { class: 'gb-money-day-by' }, 'Buddy · ') : null,
+                d.source === 'ai' ? h('span', { class: 'gb-money-day-by' }, 'AI · ') : null,
                 d.summary
               )
             : null

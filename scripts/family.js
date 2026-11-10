@@ -1658,7 +1658,7 @@ function ScreenFamily({ api, open, timezone }) {
           class: 'gb-btn gb-btn--soft gb-btn--sm',
           onclick: () =>
             run(api.markCooked(planId), () =>
-              toast.success('Noted — Buddy will favour these dishes next time.')
+              toast.success('Noted. These dishes get favoured next time.')
             ),
         },
         Icon('check', { size: 15 }),
@@ -1890,7 +1890,7 @@ function ScreenFamily({ api, open, timezone }) {
             h(
               'summary',
               null,
-              h('span', null, 'Notes from Buddy'),
+              h('span', null, 'Cooking notes'),
               h('span', { class: 'gb-family-count' }, String(tips.length + buys.length)),
               Icon('chevron-down', { size: 16, className: 'gb-family-notes-caret' })
             ),

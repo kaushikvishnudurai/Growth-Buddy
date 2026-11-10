@@ -1540,7 +1540,7 @@ function NutrientPanel(week, n, onPickDay) {
               dayLabel(d.date, i === last) +
               ': ' +
               (d.count ? d[key] + ' grams' : 'nothing logged') +
-              ". Buddy's read on this day",
+              ". A closer read on this day",
             onclick: () => onPickDay && onPickDay(d.date),
           },
           // The value rides the top of its own bar; pinned to the column top it
@@ -1625,7 +1625,7 @@ function DayByDayCard(week, onPickDay) {
         )
       ),
       NUTRIENTS.map((n) => NutrientPanel(week, n, onPickDay)),
-      h('p', { class: 'gb-summary-hint' }, "Tap a day for Buddy's read on it."),
+      h('p', { class: 'gb-summary-hint' }, "Tap a day for a closer read on it."),
     ],
   });
 }
@@ -1728,7 +1728,7 @@ function DietCheckCard({ check, canCheck, onCheck, week, water, onOpenDay }) {
     );
   let body = null;
   if (st.loading) {
-    body = Thinking('Buddy is reading ' + what, [
+    body = Thinking('Reading ' + what, [
       'Reading the dishes you logged',
       'Weighing protein, carbs, fat and fibre',
       'Writing your tips',
@@ -1780,7 +1780,7 @@ function DietCheckCard({ check, canCheck, onCheck, week, water, onOpenDay }) {
         ? h(
             'p',
             { class: 'gb-summary-hint' },
-            "Standard tips for now. Buddy's own read is unavailable."
+            "Standard tips for now. A closer read is unavailable."
           )
         : null
     );
@@ -1788,7 +1788,7 @@ function DietCheckCard({ check, canCheck, onCheck, week, water, onOpenDay }) {
     body = h(
       'p',
       { class: 'gb-summary-meta' },
-      'Buddy reads the dishes and water you logged and tells you how to close the gaps. Tap a day above for that day alone.'
+      'Reads the dishes and water you logged and tells you how to close the gaps. Tap a day above for that day alone.'
     );
   }
   const facts = scope === 'day' ? dayFacts(date, week, water) : null;
@@ -1799,7 +1799,7 @@ function DietCheckCard({ check, canCheck, onCheck, week, water, onOpenDay }) {
         'div',
         { class: 'gb-buddy-eyebrow' },
         Icon('sparkles', { size: 16, sw: 2.4 }),
-        "Buddy's read on " + what
+        'A closer read on ' + what
       ),
       facts,
       body,

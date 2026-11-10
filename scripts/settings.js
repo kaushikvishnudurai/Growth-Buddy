@@ -3183,7 +3183,7 @@ function openProfileSettings(initialTab) {
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '12px' } },
-      'A rough week? Your habit streaks hold without using freezes, and habit reminders, the evening reflection and the digest go quiet. Reminders you set a time for still ring.'
+      'A rough week? Your habit streaks hold without using freezes, and habit reminders and the digest go quiet. Reminders you set a time for still ring.'
     ),
     breakSectionBody,
     h('h3', { class: 'gb-settings-sec-label' }, 'Quiet hours'),

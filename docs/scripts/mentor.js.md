@@ -1,5 +1,7 @@
 # scripts/mentor.js — Buddy chat screen
 
+**Retired 2026-11-10, hidden not deleted.** No nav slot, no Settings switch, `featureOn('mentor')` is always false (app.js `RETIRED_FEATURES`) and the server treats it as locked for everyone (`FeatureLocks.RETIRED`). To bring it back, undo those three and the `ponytail:` line in gb-kit.js.
+
 Exports `ScreenMentor({api, threadId, starter})` and the pure helpers `richParts`, `crisisMatch`,
 `parseSse`, `actionChips`, `streamVisible`, `streamFailure` (checked by `node scripts/mentor.test.mjs`). Lazy-loaded
 from app.js's `SCREENS.mentor`, which passes `api: mentorApi()` — `get(threadId?)` (none → `/api/mentor/chat`,
