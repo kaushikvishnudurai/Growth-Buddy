@@ -76,7 +76,9 @@ export function pickOneThing({
       why:
         u.source === 'phone'
           ? 'Your phone logged it, one tap to save'
-          : u.source === 'usual'
+          : u.source === 'alarm'
+            ? 'Up with your alarm at ' + u.wakeTime + ', one tap to log it'
+            : u.source === 'usual'
             ? 'Your usual night, one tap to log it'
             : 'Same as last night, one tap to log it',
       label: u.source === 'phone' ? 'Save it' : 'Yes',

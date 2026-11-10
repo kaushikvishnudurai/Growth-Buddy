@@ -69,13 +69,48 @@ export function sleepFromHours(hours, quality, logged, usual) {
 }
 
 /**
- * What to offer for last night: the phone's own record (`phoneNight`, from
- * native.js readLastNight), else the usual night, else the newest logged night
- * 1 to 3 days old ("same as last night"). {bedtime, wakeTime, quality, source}
- * with source 'phone' | 'usual' | 'last', or null. quality is the newest
- * logged one, else 'okay'.
+ * This morning's wake time from the alarm the user dismissed: the earliest
+ * reminder set for 04:00-10:59 whose Done for `today` was pressed between 10
+ * minutes before and 90 after its time (pressed later, it was a chore ticked
+ * off, not an alarm). 'HH:MM' or null. `doneTimes` is the server's
+ * {day: ISO instant}; read in the device's clock, like the rest of the night.
+ */
+export function alarmWake(reminders, today) {
+  let best = null;
+  for (const r of reminders || []) {
+    const at = toMin(r && r.time);
+    const iso = r && r.doneTimes && r.doneTimes[today];
+    if (at == null || at < 240 || at >= 660 || !iso) continue;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) continue;
+    const pressed = d.getHours() * 60 + d.getMinutes();
+    if (pressed < at - 10 || pressed > at + 90) continue;
+    if (best == null || pressed < best) best = pressed;
+  }
+  return best == null ? null : toHHMM(best);
+}
+
+/**
+ * What to offer for last night. `phoneNight` is what this device knows: the
+ * phone's own record (native.js readLastNight: bedtime + wakeTime) and/or
+ * `alarmWake`, this morning's dismissed alarm. The night is the phone's, else
+ * the usual one, else the newest logged night 1 to 3 days old ("same as last
+ * night"); an alarm then sets the wake time (a night with no bedtime of its own
+ * gets 8 hours before it). {bedtime, wakeTime, quality, source} with source
+ * 'alarm' | 'phone' | 'usual' | 'last', or null. quality is the newest logged
+ * one, else 'okay'.
  */
 export function lastNightGuess(sleepByDate, today, phoneNight) {
+  const night = nightGuess(sleepByDate, today, phoneNight);
+  const alarm = phoneNight && toMin(phoneNight.alarmWake) != null ? toHHMM(toMin(phoneNight.alarmWake)) : null;
+  if (!alarm) return night;
+  // ponytail: 8 h before the alarm when nothing else knows the bedtime; the dialog corrects it.
+  const bedtime = night ? night.bedtime : toHHMM(toMin(alarm) - 480);
+  const quality = night ? night.quality : 'okay';
+  return { bedtime, wakeTime: alarm, quality, source: 'alarm' };
+}
+
+function nightGuess(sleepByDate, today, phoneNight) {
   const t = dayNum(today);
   const recent = Object.entries(sleepByDate || {})
     .filter(
@@ -109,14 +144,14 @@ export function lastNightGuess(sleepByDate, today, phoneNight) {
 
 /**
  * Last night, ready to confirm: lastNightGuess while today has no entry and,
- * unless the phone recorded it (that night has already ended), only once its
+ * unless the phone or an alarm recorded it (that night has already ended), only once its
  * wake time has passed. Home's check-in row and the one-thing card both ask
  * this, so they can't disagree. Same shape as lastNightGuess, or null.
  */
 export function sleepToConfirm(sleepByDate, today, now, phoneNight) {
   if (sleepByDate && sleepByDate[today]) return null;
   const g = lastNightGuess(sleepByDate, today, phoneNight);
-  return g && (g.source === 'phone' || now.getHours() * 60 + now.getMinutes() >= toMin(g.wakeTime))
+  return g && (g.source === 'phone' || g.source === 'alarm' || now.getHours() * 60 + now.getMinutes() >= toMin(g.wakeTime))
     ? g
     : null;
 }

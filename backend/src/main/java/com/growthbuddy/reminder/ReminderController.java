@@ -99,8 +99,10 @@ public class ReminderController {
     @PostMapping("/{id}/done")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void markDone(@PathVariable UUID id,
-                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        service.setDone(CurrentUser.id(), id, date, true);
+                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+                         @RequestParam(required = false) Long at) {
+        // `at`: when Done was pressed (epoch ms), so a press queued offline keeps its time.
+        service.setDone(CurrentUser.id(), id, date, true, at == null ? null : java.time.Instant.ofEpochMilli(at));
     }
 
     @DeleteMapping("/{id}/done")

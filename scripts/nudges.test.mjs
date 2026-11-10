@@ -4,6 +4,8 @@ import {
   usualSleep,
   sleepFromHours,
   lastNightGuess,
+  sleepToConfirm,
+  alarmWake,
   repeatExpense,
   usualReminderTime,
   stepsTarget,
@@ -67,6 +69,43 @@ assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:
 assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-11' }).source, 'phone');
 assert.equal(lastNightGuess({}, '2026-10-11'), null);
 assert.equal(lastNightGuess(undefined, '2026-10-11', null), null);
+
+// The dismissed alarm sets the wake time over the phone's, the usual and the last night.
+const phone = { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-11' };
+assert.deepEqual(lastNightGuess(night3, '2026-10-11', { ...phone, alarmWake: '06:32' }), {
+  bedtime: '23:10',
+  wakeTime: '06:32',
+  quality: 'good',
+  source: 'alarm',
+});
+assert.deepEqual(lastNightGuess(night3, '2026-10-11', { alarmWake: '06:32' }), {
+  bedtime: '00:00',
+  wakeTime: '06:32',
+  quality: 'good',
+  source: 'alarm',
+});
+// Nothing else known: 8 hours before the alarm.
+assert.deepEqual(lastNightGuess({}, '2026-10-11', { alarmWake: '06:30' }), {
+  bedtime: '22:30',
+  wakeTime: '06:30',
+  quality: 'okay',
+  source: 'alarm',
+});
+// An alarm night has already ended: offered at once, not held until the usual wake time.
+assert.equal(sleepToConfirm(night3, '2026-10-11', new Date(2026, 9, 11, 6, 35), { alarmWake: '06:32' }).source, 'alarm');
+assert.equal(sleepToConfirm(night3, '2026-10-11', new Date(2026, 9, 11, 6, 35), null), null);
+
+// alarmWake: the earliest morning reminder ticked Done close to its time.
+const pressed = (h, m) => new Date(2026, 9, 11, h, m).toISOString();
+const rem = (time, iso) => ({ time, doneTimes: iso ? { '2026-10-11': iso } : {} });
+assert.equal(alarmWake([rem('06:30', pressed(6, 34))], '2026-10-11'), '06:34');
+assert.equal(alarmWake([rem('06:30', pressed(6, 34)), rem('06:00', pressed(6, 5))], '2026-10-11'), '06:05');
+assert.equal(alarmWake([rem('06:30', pressed(9, 0))], '2026-10-11'), null); // ticked later: a chore, not an alarm
+assert.equal(alarmWake([rem('06:30', pressed(6, 15))], '2026-10-11'), null); // ticked well before it rang
+assert.equal(alarmWake([rem('13:00', pressed(13, 1))], '2026-10-11'), null); // not a morning time
+assert.equal(alarmWake([rem('06:30', null)], '2026-10-11'), null);
+assert.equal(alarmWake([{ time: '06:30', doneTimes: { '2026-10-10': pressed(6, 31) } }], '2026-10-11'), null);
+assert.equal(alarmWake(undefined, '2026-10-11'), null);
 
 // sleepFromHours (FRC-2): "slept 7h" ends on the logged wake, keeps its quality and note.
 assert.deepEqual(sleepFromHours(7, null, { bedtime: '23:00', wakeTime: '06:30', quality: 'good', note: 'n' }, null), {

@@ -215,6 +215,44 @@ class ReminderRichRulesTest {
     /* ---- done ---- */
 
     @Test
+    void doneKeepsWhenItWasPressedAndListsRecentPressTimes() {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        ReminderDoneRepository done = mock(ReminderDoneRepository.class);
+        UserClock clock = mock(UserClock.class);
+        ReminderService service = new ReminderService(repo, clock, null, done);
+        CalendarReminder r = rule(MON, RepeatFreq.weekly);
+        when(repo.findByIdAndUserId(r.getId(), USER)).thenReturn(Optional.of(r));
+        org.mockito.ArgumentCaptor<ReminderDone> saved = org.mockito.ArgumentCaptor.forClass(ReminderDone.class);
+
+        // A press queued offline an hour ago keeps its time; a future or stale one is now.
+        Instant hourAgo = Instant.now().minusSeconds(3600);
+        service.setDone(USER, r.getId(), MON.plusDays(7), true, hourAgo);
+        service.setDone(USER, r.getId(), MON.plusDays(14), true, Instant.now().plusSeconds(3600));
+        service.setDone(USER, r.getId(), MON.plusDays(21), true, Instant.now().minusSeconds(3 * 86400));
+        verify(done, times(3)).save(saved.capture());
+        assertThat(saved.getAllValues().get(0).getDoneAt()).isEqualTo(hourAgo);
+        assertThat(saved.getAllValues().get(1).getDoneAt()).isBetween(Instant.now().minusSeconds(60), Instant.now());
+        assertThat(saved.getAllValues().get(2).getDoneAt()).isBetween(Instant.now().minusSeconds(60), Instant.now());
+
+        // The list carries press times for the last 14 days only; every tick stays in doneDates.
+        LocalDate today = MON.plusDays(30);
+        when(clock.today(USER)).thenReturn(today);
+        ReminderDone recent = new ReminderDone();
+        recent.setReminderId(r.getId());
+        recent.setOccurrenceDate(today.minusDays(1));
+        recent.setDoneAt(hourAgo);
+        ReminderDone old = new ReminderDone();
+        old.setReminderId(r.getId());
+        old.setOccurrenceDate(today.minusDays(20));
+        old.setDoneAt(hourAgo);
+        when(done.findByUserIdAndOccurrenceDateGreaterThanEqual(eq(USER), any())).thenReturn(List.of(recent, old));
+        when(repo.findByUserId(USER)).thenReturn(List.of(r));
+        ReminderResponse listed = service.list(USER).get(0);
+        assertThat(listed.doneDates()).containsExactlyInAnyOrder(today.minusDays(1), today.minusDays(20));
+        assertThat(listed.doneTimes()).isEqualTo(Map.of(today.minusDays(1), hourAgo));
+    }
+
+    @Test
     void doneNeedsARealOccurrenceAndDropsThePendingSnooze() {
         CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
         ReminderDoneRepository done = mock(ReminderDoneRepository.class);

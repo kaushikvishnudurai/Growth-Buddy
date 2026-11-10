@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -124,7 +125,8 @@ record SnoozeLinkRequest(@NotBlank @Size(max = 300) String token) {
  * The stored reminder definition (raw, not expanded). {@code doneDates} is the
  * occurrences checked off since {@link ReminderService#DONE_LOOKBACK_DAYS} ago —
  * only on the list; a single-reminder answer (create, edit, snooze) carries null,
- * and the client keeps the dates it already had.
+ * and the client keeps the dates it already had. {@code doneTimes}: when each of
+ * the last 14 days' ticks was pressed, same rule.
  */
 record ReminderResponse(
         UUID id,
@@ -146,17 +148,18 @@ record ReminderResponse(
         String repeatDays,
         Integer repeatNth,
         Integer repeatCount,
-        Set<LocalDate> doneDates) {
+        Set<LocalDate> doneDates,
+        Map<LocalDate, Instant> doneTimes) {
 
     static ReminderResponse from(CalendarReminder r) {
-        return from(r, null);
+        return from(r, null, null);
     }
 
-    static ReminderResponse from(CalendarReminder r, Set<LocalDate> doneDates) {
+    static ReminderResponse from(CalendarReminder r, Set<LocalDate> doneDates, Map<LocalDate, Instant> doneTimes) {
         return new ReminderResponse(r.getId(), r.getText(), r.getAnchorDate(), r.getTime(),
                 r.getEndTime(), r.getTag(), r.getRepeat(), r.getFromDate(), r.getUntilDate(), r.getSkipDays(),
                 r.getSound(), r.getNotifyBefore(), r.getSnoozedUntil(), r.getNotifyBefore2(), r.getNotes(),
-                r.getRepeatInterval(), r.getRepeatDays(), r.getRepeatNth(), r.getRepeatCount(), doneDates);
+                r.getRepeatInterval(), r.getRepeatDays(), r.getRepeatNth(), r.getRepeatCount(), doneDates, doneTimes);
     }
 }
 

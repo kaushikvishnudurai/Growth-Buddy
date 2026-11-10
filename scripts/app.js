@@ -133,6 +133,7 @@ import { celebrate } from './celebrate.js';
 import { habitMoment, tasksMoment, waterMoment } from './moments.js';
 import { openSnap } from './snap.js';
 import {
+  alarmWake,
   lastNightGuess,
   usualSleep,
   sleepFromHours,
@@ -6628,11 +6629,18 @@ async function quickMood(mood, night) {
   );
 }
 
+/* What this device knows about last night, for nudges.js lastNightGuess: the
+   phone's sleep record and the wake-up alarm dismissed this morning. */
+function lastNightSignals() {
+  const alarm = alarmWake(state.reminders, todayKey());
+  return alarm ? { ...(state.phoneNight || {}), alarmWake: alarm } : state.phoneNight;
+}
+
 function openSleepSchedule() {
   const today = todayKey();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
-  // An unlogged night opens on the phone's, the usual or the last one, so a normal night is one tap on Save.
-  const usual = lastNightGuess(state.wellness.sleepByDate, today, state.phoneNight) || {
+  // An unlogged night opens on the alarm's wake time, the phone's, the usual or the last night, so a normal night is one tap on Save.
+  const usual = lastNightGuess(state.wellness.sleepByDate, today, lastNightSignals()) || {
     bedtime: '23:00',
     wakeTime: '07:00',
   };
@@ -9550,11 +9558,14 @@ function startFocusOn(link, run) {
    One snoozed_until per reminder on the server; the scheduler rings it then on
    every channel the reminder itself uses (bell, WhatsApp, push), and this
    device's own alarm queue picks it up from the reminder (push.js). */
-/* A single-reminder answer (edit, snooze) carries doneDates: null; only the
-   list has them. Keep the ones this device already holds. */
+/* A single-reminder answer (edit, snooze) carries doneDates and doneTimes: null;
+   only the list has them. Keep the ones this device already holds. */
 function keepDone(old, saved) {
   return saved && !Array.isArray(saved.doneDates)
-    ? Object.assign({}, saved, { doneDates: (old && old.doneDates) || [] })
+    ? Object.assign({}, saved, {
+        doneDates: (old && old.doneDates) || [],
+        doneTimes: (old && old.doneTimes) || {},
+      })
     : saved;
 }
 
@@ -9568,9 +9579,14 @@ async function toggleReminderDone(id, key, done) {
   // A double tap sent POST and DELETE at once, and whichever landed last won.
   const flight = 'rem:' + id + ':' + key;
   if (!togglesInFlight.claim(flight)) return false;
-  const before = { doneDates: rem.doneDates, snoozedUntil: rem.snoozedUntil };
+  const before = { doneDates: rem.doneDates, doneTimes: rem.doneTimes, snoozedUntil: rem.snoozedUntil };
   const dates = (rem.doneDates || []).filter((d) => d !== key);
   rem.doneDates = done ? dates.concat(key) : dates;
+  const pressedAt = Date.now();
+  const times = Object.assign({}, rem.doneTimes);
+  if (done) times[key] = new Date(pressedAt).toISOString();
+  else delete times[key];
+  rem.doneTimes = times;
   if (done) rem.snoozedUntil = null;
   const repaint = () => {
     reSyncDeviceAlarms();
@@ -9580,7 +9596,7 @@ async function toggleReminderDone(id, key, done) {
   repaint();
   try {
     await api(
-      '/api/reminders/' + encodeURIComponent(realId(id)) + '/done?date=' + encodeURIComponent(key),
+      '/api/reminders/' + encodeURIComponent(realId(id)) + '/done?date=' + encodeURIComponent(key) + (done ? '&at=' + pressedAt : ''),
       { method: done ? 'POST' : 'DELETE' }
     );
     return true;
@@ -12232,7 +12248,7 @@ const SCREENS = {
           p.then(() => state.screen === 'home' && render());
         },
         wellness: state.wellness,
-        phoneNight: state.phoneNight,
+        phoneNight: lastNightSignals(),
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
         dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',

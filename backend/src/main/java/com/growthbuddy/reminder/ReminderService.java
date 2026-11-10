@@ -6,6 +6,8 @@ import com.growthbuddy.common.WorkWeek;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.DayOfWeek;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
@@ -17,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -32,6 +35,7 @@ public class ReminderService {
 
     /** How far back the list DTO's doneDates reach. Past days are read-only, so older ticks only cost bytes. */
     static final int DONE_LOOKBACK_DAYS = 90;
+    static final int DONE_TIMES_DAYS = 14;
     static final int MAX_INTERVAL = 99;
     static final int MAX_COUNT = 999;
     /** How far {@link #lastByCount} looks for the Nth occurrence before calling it endless. */
@@ -61,14 +65,21 @@ public class ReminderService {
     @Transactional(readOnly = true)
     public List<ReminderResponse> list(UUID userId) {
         Map<UUID, Set<LocalDate>> ticks = new HashMap<>();
+        Map<UUID, Map<LocalDate, Instant>> times = new HashMap<>();
         if (done != null) {
-            LocalDate since = clock.today(userId).minusDays(DONE_LOOKBACK_DAYS);
+            LocalDate today = clock.today(userId);
+            LocalDate since = today.minusDays(DONE_LOOKBACK_DAYS);
             for (ReminderDone d : done.findByUserIdAndOccurrenceDateGreaterThanEqual(userId, since)) {
                 ticks.computeIfAbsent(d.getReminderId(), k -> new TreeSet<>()).add(d.getOccurrenceDate());
+                // Press times for the last two weeks only: what the sleep guess reads.
+                if (!d.getOccurrenceDate().isBefore(today.minusDays(DONE_TIMES_DAYS))) {
+                    times.computeIfAbsent(d.getReminderId(), k -> new TreeMap<>()).put(d.getOccurrenceDate(), d.getDoneAt());
+                }
             }
         }
         return repo.findByUserId(userId).stream()
-                .map(r -> ReminderResponse.from(r, ticks.getOrDefault(r.getId(), Set.of())))
+                .map(r -> ReminderResponse.from(r, ticks.getOrDefault(r.getId(), Set.of()),
+                        times.getOrDefault(r.getId(), Map.of())))
                 .toList();
     }
 
@@ -79,8 +90,17 @@ public class ReminderService {
      * another day's occurrence stays, so ticking tomorrow off ahead of time does
      * not silence today's.
      */
-    @Transactional
     public void setDone(UUID userId, UUID id, LocalDate day, boolean on) {
+        setDone(userId, id, day, on, null);
+    }
+
+    /**
+     * {@code pressedAt}: when Done was pressed, kept as {@code done_at} (the sleep
+     * guess reads a morning alarm's press as the wake time). Null, in the future or
+     * more than two days old means now.
+     */
+    @Transactional
+    public void setDone(UUID userId, UUID id, LocalDate day, boolean on, Instant pressedAt) {
         CalendarReminder r = repo.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> ApiException.notFound("Reminder"));
         if (day == null) {
@@ -99,6 +119,9 @@ public class ReminderService {
             d.setReminderId(id);
             d.setUserId(userId);
             d.setOccurrenceDate(day);
+            Instant now = Instant.now();
+            d.setDoneAt(pressedAt == null || pressedAt.isAfter(now) || pressedAt.isBefore(now.minus(Duration.ofDays(2)))
+                    ? now : pressedAt);
             done.save(d);
         }
         if (r.getSnoozedUntil() != null) {
