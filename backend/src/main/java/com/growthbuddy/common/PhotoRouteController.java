@@ -24,7 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class PhotoRouteController {
 
-    static final String PROMPT = "Classify this photo as exactly one of receipt, plate (cooked food or a meal), "
+    static final String PROMPT = "Classify this photo as exactly one of receipt (a shop bill, or a payment screenshot from a UPI "
+            + "or bank app), plate (cooked food or a meal), "
             + "groceries (fridge, pantry shelf, shopping haul). Strict JSON {\"kind\":\"receipt\"|\"plate\"|\"groceries\"}";
     private static final Set<String> KINDS = Set.of("receipt", "plate", "groceries");
     private static final Pattern IMAGE =

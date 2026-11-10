@@ -131,7 +131,7 @@ import { setWorkWeek } from './recurrence.js';
 import { computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { habitMoment, tasksMoment, waterMoment } from './moments.js';
-import { openSnap } from './snap.js';
+import { openSnap, routePhoto } from './snap.js';
 import {
   alarmWake,
   lastNightGuess,
@@ -4254,17 +4254,17 @@ async function takeSharedFromPhone() {
   }
 }
 
-/* A picture shared in: a payment screenshot (GPay, PhonePe, Paytm, a bank's
-   "paid" screen) or a shop receipt. Money's receipt reader turns it into
-   expenses the user checks before saving; nothing is written until then.
-   ponytail: straight to the receipt reader, not the Photo sheet's three-way
-   pick; a shared meal photo would need that sheet (snap.js) if it ever shows up. */
+/* A picture shared in: the Photo button's own "Where should this go?" sheet
+   (snap.js routePhoto), so the AI's guess sends a payment screenshot or receipt
+   to Money, a meal to Food and a shopping haul to the pantry, each a tap to
+   confirm. Nothing is written until the user saves on that screen. */
 function handleSharedImage(file) {
-  if (!featureOn('money')) {
-    pushToast('Turn on Money in Settings to log a payment screenshot.', 'info', 6000);
+  const routes = snapRoutes();
+  if (!Object.keys(routes).length) {
+    pushToast('Turn on Money or Food in Settings to log a photo.', 'info', 6000);
     return;
   }
-  return SNAP_ROUTES.receipt(file);
+  routePhoto(file, { shrink: shrinkForSnap, api, routes });
 }
 
 /* The picture the service worker is holding for a web share (/?share=image,

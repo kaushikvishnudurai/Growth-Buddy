@@ -64,67 +64,71 @@ export function openSnap({ shrink, api, routes }) {
   input.addEventListener('change', () => {
     const file = input.files && input.files[0];
     drop();
-    if (file) pick(file);
+    if (file) routePhoto(file, { shrink, api, routes });
   });
   document.body.appendChild(input);
   input.click();
+}
 
-  function pick(file) {
-    const { sheet, close } = openOverlay({ label: 'Where should this photo go?' });
-    const title = h('div', { class: 'gb-modal-title' }, 'Where should this go?');
-    const sub = h('div', { class: 'gb-modal-sub' }, 'Reading the photo. Pick one any time.');
-    const shrunk = shrink(file);
-    const kinds = kindsFor(routes);
-    const buttons = kinds.map((k) =>
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-modal-opt',
-          onclick: () => {
-            close();
-            routes[k.kind](file, shrunk);
-          },
+/**
+ * The "Where should this go?" sheet for a photo already in hand: the camera's
+ * (openSnap) or one another app shared in (app.js handleSharedImage).
+ */
+export function routePhoto(file, { shrink, api, routes }) {
+  const { sheet, close } = openOverlay({ label: 'Where should this photo go?' });
+  const title = h('div', { class: 'gb-modal-title' }, 'Where should this go?');
+  const sub = h('div', { class: 'gb-modal-sub' }, 'Reading the photo. Pick one any time.');
+  const shrunk = shrink(file);
+  const kinds = kindsFor(routes);
+  const buttons = kinds.map((k) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-modal-opt',
+        onclick: () => {
+          close();
+          routes[k.kind](file, shrunk);
         },
-        h('span', { class: 'gb-modal-opt-ic' }, Icon(k.icon, { size: 18 })),
-        h(
-          'span',
-          { class: 'gb-modal-opt-tx' },
-          h('span', { class: 'gb-modal-opt-l' }, k.label),
-          h('span', { class: 'gb-modal-opt-s' }, k.sub)
-        )
-      )
-    );
-    sheet.append(
-      h('div', { class: 'gb-modal-head' }, title, sub),
-      h('div', { class: 'gb-modal-opts' }, ...buttons),
+      },
+      h('span', { class: 'gb-modal-opt-ic' }, Icon(k.icon, { size: 18 })),
       h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
-        'Cancel'
+        'span',
+        { class: 'gb-modal-opt-tx' },
+        h('span', { class: 'gb-modal-opt-l' }, k.label),
+        h('span', { class: 'gb-modal-opt-s' }, k.sub)
       )
-    );
-    refreshIcons();
+    )
+  );
+  sheet.append(
+    h('div', { class: 'gb-modal-head' }, title, sub),
+    h('div', { class: 'gb-modal-opts' }, ...buttons),
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
+      'Cancel'
+    )
+  );
+  refreshIcons();
 
-    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), ROUTE_MS));
-    const guess = shrunk
-      .then((imageDataUrl) =>
-        api('/api/photo/route', { method: 'POST', body: JSON.stringify({ imageDataUrl }) })
-      )
-      .then((r) => pickDefault(r && r.kind, kinds));
-    Promise.race([guess, timeout])
-      .catch(() => null)
-      .then((kind) => {
-        if (!sheet.isConnected) return;
-        const i = kinds.findIndex((k) => k.kind === kind);
-        if (i < 0) {
-          sub.textContent = 'Pick where it goes.';
-          return;
-        }
-        title.textContent = kinds[i].guess;
-        sub.textContent = 'Tap to confirm, or pick another.';
-        buttons[i].classList.add('is-on');
-        buttons[i].focus();
-      });
-  }
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), ROUTE_MS));
+  const guess = shrunk
+    .then((imageDataUrl) =>
+      api('/api/photo/route', { method: 'POST', body: JSON.stringify({ imageDataUrl }) })
+    )
+    .then((r) => pickDefault(r && r.kind, kinds));
+  Promise.race([guess, timeout])
+    .catch(() => null)
+    .then((kind) => {
+      if (!sheet.isConnected) return;
+      const i = kinds.findIndex((k) => k.kind === kind);
+      if (i < 0) {
+        sub.textContent = 'Pick where it goes.';
+        return;
+      }
+      title.textContent = kinds[i].guess;
+      sub.textContent = 'Tap to confirm, or pick another.';
+      buttons[i].classList.add('is-on');
+      buttons[i].focus();
+    });
 }
