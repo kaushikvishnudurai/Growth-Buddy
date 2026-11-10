@@ -25,7 +25,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** null is the picker's no-AI fallback, so every failure must land there, never a 5xx. */
+/** {kind: null} is the picker's no-AI fallback, so every failure must land there, never a 5xx. */
 class PhotoRouteControllerTest {
 
     private static final String IMG = "data:image/jpeg;base64,AAAA";
@@ -99,37 +99,20 @@ class PhotoRouteControllerTest {
         assertNull(read("not json", List.of("receipt")).get("kind"));
     }
 
-    /* ---- the guess only ---- */
-
     @Test
-    void unconfiguredGivesNullAndSpendsNothing() {
+    void unconfiguredIsNoAnswerAndSpendsNothing() {
+        CurrentUser.set(USER);
         when(openai.isConfigured()).thenReturn(false);
-        assertNull(ctl.route(new PhotoRouteController.RouteRequest(IMG)).get("kind"));
+        assertNull(ctl.read(new PhotoRouteController.ReadRequest(IMG, List.of("receipt"), List.of())).get("kind"));
         verify(openai, never()).completeWithImage(anyString(), anyString(), anyString());
     }
 
     @Test
-    void garbageOrUnknownGivesNull() {
-        when(openai.isConfigured()).thenReturn(true);
-        when(openai.completeWithImage(anyString(), anyString(), anyString())).thenReturn("not json at all");
-        assertNull(ctl.route(new PhotoRouteController.RouteRequest(IMG)).get("kind"));
-        when(openai.completeWithImage(anyString(), anyString(), anyString())).thenReturn("{\"kind\":\"selfie\"}");
-        assertNull(ctl.route(new PhotoRouteController.RouteRequest(IMG)).get("kind"));
-    }
-
-    @Test
-    void plateGivesPlate() {
-        when(openai.isConfigured()).thenReturn(true);
-        when(openai.completeWithImage(anyString(), anyString(), anyString()))
-                .thenReturn("```json\n{\"kind\": \"Plate\"}\n```");
-        assertEquals("plate", ctl.route(new PhotoRouteController.RouteRequest(IMG)).get("kind"));
-    }
-
-    @Test
     void nonPhotoIsRefusedBeforeAnyCall() {
+        CurrentUser.set(USER);
         when(openai.isConfigured()).thenReturn(true);
-        assertThrows(ApiException.class,
-                () -> ctl.route(new PhotoRouteController.RouteRequest("data:image/svg+xml;base64,AAAA")));
+        assertThrows(ApiException.class, () -> ctl.read(
+                new PhotoRouteController.ReadRequest("data:image/svg+xml;base64,AAAA", List.of("receipt"), List.of())));
         verify(openai, never()).completeWithImage(anyString(), anyString(), anyString());
     }
 }

@@ -4259,13 +4259,20 @@ async function takeSharedFromPhone() {
    (snap.js routePhoto), so the AI's guess sends a payment screenshot or receipt
    to Money, a meal to Food and a shopping haul to the pantry, each a tap to
    confirm. Nothing is written until the user saves on that screen. */
-function handleSharedImage(file) {
+async function handleSharedImage(file) {
+  // A share lands on a fresh load, before wave 2 has asked whether the user is
+  // in a family: ask now, or Groceries is never offered for a shared picture.
+  if (featureOn('family') && state.inFamily === undefined) {
+    await api('/api/family')
+      .then(noteFamily)
+      .catch(() => {});
+  }
   const routes = snapRoutes();
   if (!Object.keys(routes).length) {
     pushToast('Turn on Money or Food in Settings to log a photo.', 'info', 6000);
     return;
   }
-  routePhoto(file, { shrink: shrinkForSnap, read: readPhoto, routes });
+  routePhoto(file, { shrink: shrinkForSnap, read: readPhoto, discard: discardPhotoRead, routes });
 }
 
 /* The picture the service worker is holding for a web share (/?share=image,
@@ -10282,6 +10289,22 @@ const SNAP_FEATURE = { receipt: 'money', plate: 'food', groceries: 'family' };
     Groceries unless the user is in a family (the pantry is a family's; without
     one the scan 400s). `state.inFamily` comes from GET /api/family: after wave 2
     and whenever the Family screen reads it; unknown = not offered. */
+/* Pantry items a photo added, taken back out: the groceries toast's Undo, or
+   the photo sheet closed without choosing Groceries (snap.js `discard`), when
+   the one-call read had already added them. */
+async function removeScannedPantry(added, say) {
+  const ids = (added || []).map((it) => it && it.id).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await Promise.all(ids.map((id) => api('/api/family/pantry/' + encodeURIComponent(id), { method: 'DELETE' })));
+    if (say) toastSuccess('Removed ' + plural(ids.length, 'item') + ' from your pantry.');
+  } catch (err) {
+    toastError(err, 'Could not remove them. Delete them in Family > Pantry.');
+  }
+}
+const discardPhotoRead = (answer) =>
+  answer && answer.kind === 'groceries' && answer.groceries && removeScannedPantry(answer.groceries.added, false);
+
 /* /api/photo/read: the photo sheet's one call (snap.js). Money's categories ride
    along for the receipt reading, as requestReceiptScan sends them. */
 const readPhoto = (imageDataUrl, kinds) =>
@@ -10334,7 +10357,9 @@ const SNAP_ROUTES = {
       const msg = n
         ? 'Added ' + plural(n, 'item') + ' to your pantry'
         : (res && res.message) || 'Nothing to add from that photo.';
-      pushToast(msg, n ? 'success' : 'info', 6000, toFamily);
+      // Saved at once, so the toast's button is Undo: a misread photo comes straight back out.
+      const undo = { label: 'Undo', run: () => removeScannedPantry(res.added, true) };
+      pushToast(msg, n ? 'success' : 'info', 8000, n ? undo : toFamily);
     } catch (err) {
       const msg = (err && err.message) || 'Join or create a family to use the pantry.';
       pushToast(msg, 'error', 6000, toFamily);
@@ -10517,7 +10542,7 @@ function openAddSheet(prefill) {
         close();
         // Static import: the camera opens inside this tap's gesture (WebKit
         // drops a file-input click that follows an await).
-        openSnap({ shrink: shrinkForSnap, read: readPhoto, routes });
+        openSnap({ shrink: shrinkForSnap, read: readPhoto, discard: discardPhotoRead, routes });
       },
     },
     {

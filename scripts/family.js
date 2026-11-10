@@ -252,6 +252,8 @@ function ScreenFamily({ api, open, timezone }) {
     weeklyError: '',
     weeklyOpts: { days: 7, occasion: 'normal', usePantry: true },
     pantryItems: null, // null = not loaded yet
+    pantrySelecting: false, // the pantry list's Select mode
+    pantryPicked: new Set(), // ids ticked in it
     pantryScanBusy: false,
     pantryScanMsg: '',
     shoppingList: null, // { items, totalEstimatedCost }
@@ -2441,8 +2443,104 @@ function ScreenFamily({ api, open, timezone }) {
 
   // ---- pantry ----
 
+  /* Pantry items out (a row's bin, or Select's Delete N): gone at once, one
+     toast with Undo, which adds them back.
+     ponytail: Undo re-adds copies (new ids) rather than restoring the rows; a
+     restore endpoint if anything ever points at a pantry item's id. */
+  async function removePantry(list) {
+    const ids = new Set(list.map((it) => it.id));
+    model.pantryItems = (model.pantryItems || []).filter((x) => !ids.has(x.id));
+    paint();
+    try {
+      await Promise.all(list.map((it) => api.deletePantry(it.id)));
+    } catch (err) {
+      toast.error(err, 'Could not remove that.');
+      return load();
+    }
+    toast.action(
+      list.length === 1 ? 'Removed ' + list[0].name + '.' : 'Removed ' + list.length + ' items.',
+      'Undo',
+      async () => {
+        try {
+          const back = await Promise.all(
+            list.map((it) =>
+              api.addPantry({
+                name: it.name,
+                category: it.category,
+                quantity: it.quantity || null,
+                expiryDate: it.expiryDate || null,
+                leftover: !!it.leftover,
+                low: !!it.low,
+              })
+            )
+          );
+          model.pantryItems = back.concat(model.pantryItems || []);
+          paint();
+        } catch (err) {
+          toast.error(err, 'Could not put them back.');
+          load();
+        }
+      }
+    );
+  }
+
   function pantrySection() {
     const items = model.pantryItems || [];
+    // Select mode: tick rows, then delete them in one go (one Undo), as in Settings > Reminders.
+    const picked = model.pantryPicked;
+    for (const id of [...picked]) if (!items.some((it) => it.id === id)) picked.delete(id);
+    if (!items.length) model.pantrySelecting = false;
+    const allOn = items.length > 0 && picked.size === items.length;
+    const selectBtn = items.length
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--sm',
+            onclick: () => {
+              model.pantrySelecting = !model.pantrySelecting;
+              picked.clear();
+              paint();
+            },
+          },
+          model.pantrySelecting ? 'Done' : 'Select'
+        )
+      : null;
+    const bulkBar = model.pantrySelecting
+      ? h(
+          'div',
+          { class: 'gb-remset-bulk' },
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-btn--sm',
+              onclick: () => {
+                if (allOn) picked.clear();
+                else items.forEach((it) => picked.add(it.id));
+                paint();
+              },
+            },
+            allOn ? 'Clear' : 'Select all'
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--danger gb-btn--sm',
+              disabled: !picked.size,
+              onclick: () => {
+                const chosen = items.filter((it) => picked.has(it.id));
+                model.pantrySelecting = false;
+                picked.clear();
+                removePantry(chosen);
+              },
+            },
+            Icon('trash-2', { size: 15 }),
+            picked.size ? 'Delete ' + picked.size : 'Delete'
+          )
+        )
+      : null;
     const nameI = h('input', {
       type: 'text',
       class: 'gb-input',
@@ -2530,7 +2628,7 @@ function ScreenFamily({ api, open, timezone }) {
     return h(
       'section',
       { class: 'gb-family-planner' },
-      h('div', { class: 'gb-section-head' }, h('h2', null, 'Pantry')),
+      h('div', { class: 'gb-section-head' }, h('h2', null, 'Pantry'), selectBtn),
       h(
         'div',
         { class: 'gb-card gb-family-grocery' },
@@ -2575,7 +2673,8 @@ function ScreenFamily({ api, open, timezone }) {
           )
         )
       ),
-      items.length ? restockButton('Add low & expiring items to the list') : null,
+      items.length && !model.pantrySelecting ? restockButton('Add low & expiring items to the list') : null,
+      bulkBar,
       items.length
         ? h(
             'div',
@@ -2625,20 +2724,40 @@ function ScreenFamily({ api, open, timezone }) {
     const meta = metaParts.length
       ? metaParts.flatMap((m, i) => [i ? ' · ' : '', h('span', { class: 'gb-family-meta-part' }, m)])
       : null;
+    const id = h(
+      'div',
+      { class: 'gb-family-pantry-id' },
+      h(
+        'div',
+        { class: 'gb-family-card-name' },
+        it.name,
+        it.leftover ? h('span', { class: 'gb-pill gb-pill--soft' }, 'Leftover') : null
+      ),
+      meta ? h('div', { class: 'gb-family-card-meta' }, ...meta) : null
+    );
+    // Selecting: the whole row is the checkbox's label, and Low / the bin step aside.
+    if (model.pantrySelecting) {
+      return h(
+        'label',
+        { class: 'gb-card gb-family-pantry-item' },
+        h('input', {
+          type: 'checkbox',
+          class: 'gb-remset-pick',
+          checked: model.pantryPicked.has(it.id),
+          onchange: (e) => {
+            if (e.currentTarget.checked) model.pantryPicked.add(it.id);
+            else model.pantryPicked.delete(it.id);
+            paint();
+          },
+        }),
+        id,
+        badge
+      );
+    }
     return h(
       'div',
       { class: 'gb-card gb-family-pantry-item' },
-      h(
-        'div',
-        { class: 'gb-family-pantry-id' },
-        h(
-          'div',
-          { class: 'gb-family-card-name' },
-          it.name,
-          it.leftover ? h('span', { class: 'gb-pill gb-pill--soft' }, 'Leftover') : null
-        ),
-        meta ? h('div', { class: 'gb-family-card-meta' }, ...meta) : null
-      ),
+      id,
       badge,
       h(
         'button',
@@ -2673,10 +2792,7 @@ function ScreenFamily({ api, open, timezone }) {
           type: 'button',
           class: 'gb-iconbtn gb-iconbtn--danger',
           'aria-label': 'Remove ' + it.name,
-          onclick: () =>
-            run(api.deletePantry(it.id), () => {
-              model.pantryItems = (model.pantryItems || []).filter((x) => x.id !== it.id);
-            }),
+          onclick: () => removePantry([it]),
         },
         Icon('trash-2', { size: 16 })
       )

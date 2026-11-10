@@ -24,26 +24,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The one camera button: guesses which scanner a photo belongs to (receipt,
- * plate, groceries) so the client can preselect it. {kind: null} is the
- * fallback, and the client shows the same three-choice picker either way, so
- * this never fails a request over the AI: no token, a 429 budget, garbage
- * JSON or an unknown label all answer null.
- *
- * <p>{@code /api/photo/read} does the guess and the reading in ONE vision call:
- * the prompt holds each reader's own rules, the model names the kind and answers
- * in that kind's format, and the answer goes through that feature's own checks
- * ({@code MoneyService.receiptFrom}, {@code FoodService.plateFrom},
- * {@code FamilyService.pantryFrom}, which adds to the pantry as a scan does).
- * The client opens that screen already filled in; a kind the user picks instead
- * calls its own reader as before.
+ * The photo sheet's one AI call (snap.js routePhoto: Quick add's Photo, or a
+ * picture shared in). {@code /api/photo/read} guesses the kind AND reads the
+ * photo in ONE vision call: the prompt holds each reader's own rules, the model
+ * names the kind and answers in that kind's format, and the answer goes through
+ * that feature's own checks ({@code MoneyService.receiptFrom},
+ * {@code FoodService.plateFrom}, {@code FamilyService.pantryFrom}, which adds to
+ * the pantry as a scan does; the client takes them back out if the user doesn't
+ * choose Groceries). The client opens that screen already filled in; a kind the
+ * user picks instead calls its own reader. {kind: null} is the fallback (the
+ * same three-choice picker), so this never fails a request over the AI: no
+ * token, a 429 budget, garbage JSON or an unknown label all answer null.
  */
 @RestController
 public class PhotoRouteController {
 
-    static final String PROMPT = "Classify this photo as exactly one of receipt (a shop bill, or a payment screenshot from a UPI "
-            + "or bank app), plate (cooked food or a meal), "
-            + "groceries (fridge, pantry shelf, shopping haul). Strict JSON {\"kind\":\"receipt\"|\"plate\"|\"groceries\"}";
     private static final Set<String> KINDS = Set.of("receipt", "plate", "groceries");
     private static final Pattern IMAGE =
             Pattern.compile("data:image/(jpeg|jpg|png|webp);base64,", Pattern.CASE_INSENSITIVE);
@@ -127,32 +122,5 @@ public class PhotoRouteController {
             p.append("\n## kind \"").append(k).append("\": ").append(parts.get(k));
         }
         return p.toString();
-    }
-
-    // Same cap as the other scan requests (GroceryScanRequest: 2,000,000 chars).
-    public record RouteRequest(@NotBlank @Size(max = 2_000_000) String imageDataUrl) {}
-
-    @PostMapping("/api/photo/route")
-    public Map<String, Object> route(@Valid @RequestBody RouteRequest req) {
-        String img = req == null ? null : req.imageDataUrl();
-        if (img == null || !IMAGE.matcher(img).lookingAt()) {
-            throw ApiException.badRequest("Send a JPEG, PNG or WebP photo.");
-        }
-        Map<String, Object> out = new HashMap<>();
-        out.put("kind", classify(img));
-        return out;
-    }
-
-    String classify(String img) {
-        if (!openai.isConfigured()) {
-            return null;
-        }
-        try {
-            String raw = openai.completeWithImage(PROMPT, "Which one is it? Strict JSON only.", img);
-            String kind = JSON.readTree(OpenAIClient.jsonOf(raw)).path("kind").asText("").toLowerCase(Locale.ROOT);
-            return KINDS.contains(kind) ? kind : null;
-        } catch (Exception e) {
-            return null;
-        }
     }
 }

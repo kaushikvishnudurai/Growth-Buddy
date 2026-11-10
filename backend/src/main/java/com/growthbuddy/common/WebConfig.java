@@ -138,7 +138,6 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/family/meal-plan",
                     "/api/family/meal-plan/multi",
                     "/api/family/shopping/generate",
-                    "/api/photo/route",
                     "/api/photo/read"
                 );
     }

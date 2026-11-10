@@ -58,7 +58,7 @@ export function kindsFor(routes) {
  * itself). A kind left out of routes is not offered. Call it straight from the
  * tap: the file picker needs the user's gesture, which an await before it would lose.
  */
-export function openSnap({ shrink, read, routes }) {
+export function openSnap({ shrink, read, discard, routes }) {
   const input = h('input', {
     type: 'file',
     accept: 'image/*',
@@ -70,7 +70,7 @@ export function openSnap({ shrink, read, routes }) {
   input.addEventListener('change', () => {
     const file = input.files && input.files[0];
     drop();
-    if (file) routePhoto(file, { shrink, read, routes });
+    if (file) routePhoto(file, { shrink, read, discard, routes });
   });
   document.body.appendChild(input);
   input.click();
@@ -79,9 +79,16 @@ export function openSnap({ shrink, read, routes }) {
 /**
  * The "Where should this go?" sheet for a photo already in hand: the camera's
  * (openSnap) or one another app shared in (app.js handleSharedImage).
+ * discard(answer), optional: the sheet closed (Cancel, Escape, Back, a tap
+ * outside, or another kind chosen) without the kind the AI read it as; the
+ * read may already have saved something (groceries go straight to the pantry).
  */
-export function routePhoto(file, { shrink, read, routes }) {
-  const { sheet, close } = openOverlay({ label: 'Where should this photo go?' });
+export function routePhoto(file, { shrink, read, discard, routes }) {
+  let chosen = null;
+  const { sheet, close } = openOverlay({
+    label: 'Where should this photo go?',
+    onClose: () => discard && answer.then((a) => a && a.kind && a.kind !== chosen && discard(a)),
+  });
   const title = h('div', { class: 'gb-modal-title' }, 'Where should this go?');
   const sub = h('div', { class: 'gb-modal-sub' }, 'Reading the photo. Pick one any time.');
   const shrunk = shrink(file);
@@ -95,6 +102,7 @@ export function routePhoto(file, { shrink, read, routes }) {
         type: 'button',
         class: 'gb-modal-opt',
         onclick: () => {
+          chosen = k.kind;
           close();
           routes[k.kind](file, shrunk, answer.then((a) => readFor(k.kind, a)));
         },
