@@ -3193,8 +3193,9 @@ function openProfileSettings(initialTab) {
       'No habit reminders, water nudges or digest in this window, on any device or on WhatsApp. The digest waits until it ends. Reminders you set a time for still ring.'
     ),
     quietSectionBody,
-    h('h3', { class: 'gb-settings-sec-label' }, 'Buddy'),
-    reflectSectionBody,
+    // Off with Buddy: the server sends no reflection then (ReflectionScheduler).
+    featureOn('mentor') ? h('h3', { class: 'gb-settings-sec-label' }, 'Buddy') : null,
+    featureOn('mentor') ? reflectSectionBody : null,
     h('h3', { class: 'gb-settings-sec-label' }, 'Notification sound'),
     h(
       'div',
