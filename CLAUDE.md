@@ -61,7 +61,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   sends: an item missed is an expense that never reaches the server, a false delete removes one the
   user still has), `node scripts/push.test.mjs`, `node scripts/health.test.mjs` (which stretch of
   sleep becomes "last night"), `node scripts/health-logic.test.mjs` (how a day's health value is built
-  from phone + typed readings: sums add, measurements take the newest), `node scripts/nudges.test.mjs` (Home's one-tap guesses), `node scripts/one-thing.test.mjs` (the priority order of Home's one-thing card), `node scripts/app-logic.test.mjs` (water overlay +
+  from phone + typed readings: sums add, measurements take the newest; the row a linked habit's typed number becomes), `node scripts/nudges.test.mjs` (Home's one-tap guesses), `node scripts/one-thing.test.mjs` (the priority order of Home's one-thing card), `node scripts/app-logic.test.mjs` (water overlay +
   offline replay order, the tour's once-per-new-account rule, backdated-summary guard, week generation, goal-progress rollback, double-tap
   guard, reminder edit PATCH + time range, nav layout split; helpers in `app-logic.js`), `node scripts/habit-stats.test.mjs`,
   **`node scripts/bundle-budget.mjs`** after `npm run build` (CI runs it: boot chunk and precache

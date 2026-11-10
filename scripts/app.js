@@ -3934,7 +3934,15 @@ function openMeasuredCheckin(habit) {
     errorMessage: 'Could not save that check-in.',
     // Closes first, then un-ticks through the ordinary toggle (optimistic paint,
     // score refresh). Un-ticking clears the day's number on the server.
-    danger: editing ? { label: 'Un-tick today', onClick: () => plainToggleHabit(habit.id) } : null,
+    danger: editing
+      ? {
+          label: 'Un-tick today',
+          onClick: () => {
+            plainToggleHabit(habit.id);
+            mirrorHabitToHealth(habit, null);
+          },
+        }
+      : null,
     onPrimary: async () => {
       // One save at a time per habit, shared with the plain toggle: Enter plus a
       // click, or a tick on Home while this was saving, sent two check-ins.
@@ -3967,6 +3975,7 @@ function openMeasuredCheckin(habit) {
       }
       state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
       reconcileStreakFreeze(updated);
+      mirrorHabitToHealth(updated, value);
       if (!editing) buddyReact('yes');
       reSyncDeviceAlarms();
       // The dialog closes on the check-in; score and XP land after it, together.
@@ -4126,7 +4135,6 @@ async function autoTickHealthHabits() {
     })
   );
   // A habit that records a number gets the reading when it is the same thing.
-  const SAME = { steps: 'steps', distance: 'km', workout: 'minutes' };
   open.forEach((hb) => {
     const link = linkOf(hb);
     const target = hb.healthLink ? Number(hb.healthTarget) : stepsTarget(hb.name);
@@ -4134,7 +4142,7 @@ async function autoTickHealthHabits() {
     if (v == null || !(target > 0) || v < target) return;
     const L = HEALTH_LINKS[link];
     const why = link === 'sleep' ? v + ' h of sleep' : v.toLocaleString() + ' ' + L.unit + ' on your phone';
-    autoTickHabit(hb, SAME[link] === hb.metric ? v : null, why);
+    autoTickHabit(hb, HABIT_HEALTH_METRIC[link] === hb.metric ? v : null, why);
   });
 }
 
@@ -4423,6 +4431,47 @@ async function deleteHealthReading(id) {
   toastSuccess('Reading deleted.');
   render();
   if (gone && gone.type === 'weight') refreshCurrentUser().then(render);
+}
+
+/* The other way round: a number typed on a linked habit (steps on a Steps
+   habit) lands in Health as one hand row of its own, holding only what the
+   phone and other entries lack, so Health's total reads the habit's number.
+   `total` null (un-ticked or cleared) takes that row back out.
+   ponytail: matched by note, so renaming the habit mid-day leaves the old row */
+const HABIT_HEALTH_METRIC = { steps: 'steps', distance: 'km', workout: 'minutes' };
+async function mirrorHabitToHealth(habit, total) {
+  const type = habit.healthLink;
+  if (!type || HABIT_HEALTH_METRIC[type] !== habit.metric) return;
+  try {
+    if (health.readings == null) await loadHealthReadings();
+    if (health.readings == null) return;
+    const { habitReadingPlan } = await import('./health-logic.js');
+    const note = 'From habit ' + habit.name;
+    // The phone counts what it has now, not just its last sync: the prefilled
+    // count typed back would otherwise be added again on the next sync.
+    const live = isNative() ? await readHealthValue(type) : null;
+    const rows = live != null ? [...health.readings, { type, day: todayKey(), value: live, source: 'phone' }] : health.readings;
+    const plan = habitReadingPlan(rows, type, todayKey(), total, note);
+    if (plan.op === 'create') {
+      const saved = await api('/api/health/readings', {
+        method: 'POST',
+        body: JSON.stringify({ type, value: plan.value, day: todayKey(), note }),
+      });
+      health.readings = [saved, ...health.readings];
+    } else if (plan.op === 'update') {
+      const saved = await api('/api/health/readings/' + encodeURIComponent(plan.id), {
+        method: 'PUT',
+        body: JSON.stringify({ value: plan.value }),
+      });
+      health.readings = health.readings.map((r) => (r.id === plan.id ? saved : r));
+    } else if (plan.op === 'delete') {
+      await api('/api/health/readings/' + encodeURIComponent(plan.id), { method: 'DELETE' });
+      health.readings = health.readings.filter((r) => r.id !== plan.id);
+    } else return;
+    if (state.screen === 'health') render();
+  } catch (err) {
+    toastError(err, 'The habit is saved, but Health did not get the number.');
+  }
 }
 
 /* Today's value for a habit's health link: what the phone says now (or its

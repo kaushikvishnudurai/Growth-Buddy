@@ -6,6 +6,7 @@ import {
   series,
   latestValue,
   readingError,
+  habitReadingPlan,
   nightOnBand,
   nights,
   addDays,
@@ -207,6 +208,27 @@ assert.equal(durationLabel(45), '45m');
   assert.ok(!healthInsights(swing, {}, T, { max: 10 }).some((x) => x.id === 'weight-trend'));
   // Still no emoji anywhere.
   assert.ok([avg, steady, bed, lv, wd].every((x) => !/\p{Extended_Pictographic}/u.test(x.title + x.text)));
+}
+
+// A linked habit's typed total becomes one hand row holding only what the day lacks.
+{
+  const N = 'From habit Walk';
+  const phone = { id: 'p', type: 'steps', day: '2026-11-10', value: 5000, source: 'phone' };
+  const own = { id: 'h', type: 'steps', day: '2026-11-10', value: 3000, source: 'manual', note: N };
+  assert.deepEqual(habitReadingPlan([], 'steps', '2026-11-10', 8000, N), { op: 'create', value: 8000 });
+  assert.deepEqual(habitReadingPlan([phone], 'steps', '2026-11-10', 8000, N), { op: 'create', value: 3000 });
+  // The phone's own count typed back in: nothing to add.
+  assert.deepEqual(habitReadingPlan([phone], 'steps', '2026-11-10', 5000, N), { op: 'none' });
+  // Re-saved: the same row moves, never a second one (sums would double).
+  assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 9000, N), { op: 'update', id: 'h', value: 4000 });
+  assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 8000, N), { op: 'none' });
+  // Lowered under the rest of the day, or cleared: the habit's row goes.
+  assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 4000, N), { op: 'delete', id: 'h' });
+  assert.deepEqual(habitReadingPlan([own], 'steps', '2026-11-10', null, N), { op: 'delete', id: 'h' });
+  // Another day's or another note's rows are not its own.
+  assert.deepEqual(habitReadingPlan([{ ...own, note: 'treadmill' }], 'steps', '2026-11-10', 8000, N), { op: 'create', value: 5000 });
+  assert.deepEqual(habitReadingPlan([{ ...own, day: '2026-11-09' }], 'steps', '2026-11-10', 8000, N), { op: 'create', value: 8000 });
+  assert.deepEqual(habitReadingPlan([], 'distance', '2026-11-10', 5.25, N), { op: 'create', value: 5.3 });
 }
 
 console.log('health-logic: ok');
