@@ -22,7 +22,7 @@ splash control, no device name, "this browser doesn't support push notifications
   mobile repo patches the plugin (`patches/`) to broadcast it to `NotificationActionReceiver`, which
   makes the same API call natively with the token `setNativeAuth(token, base)` mirrored (from
   `saveSession` and boot; `clearNativeAuth` in `clearSession`), re-posts a snoozed card at
-  `snoozedUntil`, swaps a +250 ml press's card for a quiet thank-you card (`gb-thanks` channel,
+  `snoozedUntil` (offline, at the length `setNativeSnooze(minutes)` mirrored from push.js `syncDeviceAlarms`), swaps a +250 ml press's card for a quiet thank-you card (`gb-thanks` channel,
   clears in 10 s), and sets a flag: `takeNativeChanges()` on resume, or the live `onNativeChanges`
   event, makes app.js `loadData()`. An APK without the receiver falls back to opening the app.
 - The proxy answers `undefined` for `then`, so an accidental `await` on it can't hang forever.

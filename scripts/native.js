@@ -505,6 +505,13 @@ export function setNativeAuth(token, base) {
   p.setAuth({ token, base }).catch(() => {});
 }
 
+/* The user's snooze length, for a Snooze pressed with no network: Android
+   re-arms that ring itself (NotificationActionReceiver.snoozeMinutes). */
+export function setNativeSnooze(minutes) {
+  const p = nativePlugin('NotificationActions');
+  if (p) p.setSnooze({ minutes }).catch(() => {});
+}
+
 export function clearNativeAuth() {
   const p = nativePlugin('NotificationActions');
   if (p) p.clearAuth().catch(() => {});

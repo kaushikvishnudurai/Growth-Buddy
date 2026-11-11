@@ -4436,8 +4436,7 @@ async function deleteHealthReading(id) {
 /* The other way round: a number typed on a linked habit (steps on a Steps
    habit) lands in Health as one hand row of its own, holding only what the
    phone and other entries lack, so Health's total reads the habit's number.
-   `total` null (un-ticked or cleared) takes that row back out.
-   ponytail: matched by note, so renaming the habit mid-day leaves the old row */
+   `total` null (un-ticked or cleared) takes that row back out. */
 const HABIT_HEALTH_METRIC = { steps: 'steps', distance: 'km', workout: 'minutes' };
 async function mirrorHabitToHealth(habit, total) {
   const type = habit.healthLink;
@@ -4461,7 +4460,7 @@ async function mirrorHabitToHealth(habit, total) {
     } else if (plan.op === 'update') {
       const saved = await api('/api/health/readings/' + encodeURIComponent(plan.id), {
         method: 'PUT',
-        body: JSON.stringify({ value: plan.value }),
+        body: JSON.stringify({ value: plan.value, note: plan.note }),
       });
       health.readings = health.readings.map((r) => (r.id === plan.id ? saved : r));
     } else if (plan.op === 'delete') {
@@ -10047,6 +10046,7 @@ function reSyncDeviceAlarms() {
     quiet: quietHours(),
     breakPrefs: breakPrefs(),
     snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
+    snoozeMinutes: snoozeMinutes(),
     ring: reminderRing(),
   })
     .then((n) => (deviceAlarmsArmed = n > 0))

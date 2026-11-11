@@ -220,13 +220,17 @@ assert.equal(durationLabel(45), '45m');
   // The phone's own count typed back in: nothing to add.
   assert.deepEqual(habitReadingPlan([phone], 'steps', '2026-11-10', 5000, N), { op: 'none' });
   // Re-saved: the same row moves, never a second one (sums would double).
-  assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 9000, N), { op: 'update', id: 'h', value: 4000 });
+  assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 9000, N), { op: 'update', id: 'h', value: 4000, note: N });
   assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 8000, N), { op: 'none' });
   // Lowered under the rest of the day, or cleared: the habit's row goes.
   assert.deepEqual(habitReadingPlan([phone, own], 'steps', '2026-11-10', 4000, N), { op: 'delete', id: 'h' });
   assert.deepEqual(habitReadingPlan([own], 'steps', '2026-11-10', null, N), { op: 'delete', id: 'h' });
   // Another day's or another note's rows are not its own.
   assert.deepEqual(habitReadingPlan([{ ...own, note: 'treadmill' }], 'steps', '2026-11-10', 8000, N), { op: 'create', value: 5000 });
+  // Renamed habit: its old row moves to the new name, never a second row.
+  assert.deepEqual(habitReadingPlan([phone, { ...own, note: 'From habit Morning walk' }], 'steps', '2026-11-10', 8000, N), { op: 'update', id: 'h', value: 3000, note: N });
+  // Above the metric's ceiling: the stored row is already the capped value, so nothing to send.
+  assert.deepEqual(habitReadingPlan([{ ...own, value: 100000 }], 'steps', '2026-11-10', 150000, N), { op: 'none' });
   assert.deepEqual(habitReadingPlan([{ ...own, day: '2026-11-09' }], 'steps', '2026-11-10', 8000, N), { op: 'create', value: 8000 });
   assert.deepEqual(habitReadingPlan([], 'distance', '2026-11-10', 5.25, N), { op: 'create', value: 5.3 });
 }

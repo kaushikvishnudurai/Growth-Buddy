@@ -143,17 +143,23 @@ export function readingError(type, value, value2) {
 /**
  * A linked habit's typed number is the day's whole total ("8,000 steps"), but
  * Health adds hand entries on top of the phone. So the habit keeps one hand row
- * of its own (found by `note`) holding only what the rest of the day lacks.
- * Returns { op: 'create' | 'update' | 'delete' | 'none', id?, value? }.
+ * of its own holding only what the rest of the day lacks. The row is found by
+ * the `From habit ` prefix, not the whole note, so a renamed habit keeps its
+ * row and `note` (the current name) rides on the update.
+ * Returns { op: 'create' | 'update' | 'delete' | 'none', id?, value?, note? }.
  */
+const HABIT_NOTE = 'From habit ';
 export function habitReadingPlan(readings, type, day, total, note) {
-  const own = (readings || []).find((r) => r && r.type === type && r.day === day && r.source !== 'phone' && r.note === note);
+  const own = (readings || []).find(
+    (r) => r && r.type === type && r.day === day && r.source !== 'phone' && String(r.note || '').startsWith(HABIT_NOTE)
+  );
   const rest = dayValue((readings || []).filter((r) => r !== own), type, day);
   const meta = HEALTH_METRICS[type];
   const gap = total == null ? 0 : round(Number(total) - (rest ? rest.value : 0), meta.dp);
   if (!(gap >= meta.min)) return own ? { op: 'delete', id: own.id } : { op: 'none' };
-  if (!own) return { op: 'create', value: Math.min(gap, meta.max) };
-  return Number(own.value) === gap ? { op: 'none' } : { op: 'update', id: own.id, value: Math.min(gap, meta.max) };
+  const want = Math.min(gap, meta.max);
+  if (!own) return { op: 'create', value: want };
+  return Number(own.value) === want && own.note === note ? { op: 'none' } : { op: 'update', id: own.id, value: want, note };
 }
 
 function round(v, dp) {

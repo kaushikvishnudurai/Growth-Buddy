@@ -30,6 +30,7 @@ import {
   versionedChannel,
   pruneCustomChannels,
   deliveredLocalBodies,
+  setNativeSnooze,
 } from './native.js';
 import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './water-stats.js';
@@ -583,6 +584,8 @@ async function syncNow(opts) {
   // Cheap and idempotent; redone per sync because the Snooze label follows
   // the user's snooze length.
   await registerNotificationActions(notificationActionTypes(opts && opts.snoozeLabel));
+  // An offline Snooze is re-armed on the phone itself, so it needs the length too.
+  if (opts && opts.snoozeMinutes) setNativeSnooze(opts.snoozeMinutes);
   const queue = upcomingAlarms({ ...opts, shown: await deliveredLocalBodies() }, new Date());
   // A deleted sound's channel would sit in the phone's Settings forever.
   await pruneCustomChannels(customChimes().map((c) => customChannel(c)));
