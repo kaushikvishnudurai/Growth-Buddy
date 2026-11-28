@@ -1773,15 +1773,20 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
   async function shareInvite(c) {
     const url = inviteLink(api.siteUrl || window.location.href, c);
     const text = 'Join my circle ' + c.name + ' on Growth Buddy';
-    try {
-      if (navigator.share) {
+    if (navigator.share) {
+      try {
         await navigator.share({ title: c.name, text, url });
         return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // closed the share sheet
+        // InvalidStateError: an earlier sheet is still pending (a second tap, or
+        // desktop Chrome never settling a dismissed one). Copy instead.
       }
+    }
+    try {
       await navigator.clipboard.writeText(text + ': ' + url);
       toast.success('Invite link copied.');
     } catch (err) {
-      if (err && err.name === 'AbortError') return; // closed the share sheet
       toast.error(
         err,
         'Could not share the link. The code is ' + (c.joinCode || 'not needed: it is public') + '.'
