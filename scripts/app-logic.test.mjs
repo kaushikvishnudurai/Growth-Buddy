@@ -417,16 +417,17 @@ await test('first-run keeps the timezone step when the zones differ', () => {
   assert.deepEqual(firstRunSteps({ hasGoal: true, accountZone: '', deviceZone: 'Asia/Tokyo' }), ['goal']);
 });
 
-await test('push is asked once, at a timed save, only when it can help', () => {
+await test('push is asked once a session, at a timed save, only when it can help', () => {
   const due = { needs: true, setupOpen: false, asked: false, supported: true, subscribed: false, permission: 'default' };
   assert.equal(pushAskDue(due), true);
   assert.equal(pushAskDue({ ...due, permission: 'prompt' }), true, 'native not asked yet');
   assert.equal(pushAskDue({ ...due, needs: false }), false, 'an untimed save');
   assert.equal(pushAskDue({ ...due, setupOpen: true }), false, 'never inside first-run');
-  assert.equal(pushAskDue({ ...due, asked: true }), false, 'once per account');
+  assert.equal(pushAskDue({ ...due, asked: true }), false, 'once per session');
   assert.equal(pushAskDue({ ...due, supported: false }), false, 'no notifications here');
   assert.equal(pushAskDue({ ...due, subscribed: true }), false, 'already on');
-  assert.equal(pushAskDue({ ...due, permission: 'denied' }), false, 'already refused');
+  assert.equal(pushAskDue({ ...due, permission: 'denied' }), false, 'refused in a browser: nothing to open');
+  assert.equal(pushAskDue({ ...due, permission: 'denied', native: true }), true, 'refused on the phone: offer its settings');
 });
 
 await test('the tour shows once, to a new account only', () => {

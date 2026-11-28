@@ -199,6 +199,9 @@ import {
   onSharedText,
   sharePlugin,
   canRingLikeAlarm,
+  fullScreenStatus,
+  openFullScreenSettings,
+  openAppSettings,
 } from './native.js';
 import { launchIntent } from './launch-intent.js';
 import { RingRow } from './ring-row.js';
@@ -2369,32 +2372,63 @@ async function enablePushFlow(okMessage) {
   return false;
 }
 
-/* The notification ask, at the moment it makes sense: the first time a timed
-   reminder or a habit with a reminder time is saved (and once at the end of
-   first-run when the goal step made timed ones). Once per account
-   (`ui_prefs.pushAsked`, recorded before asking, so a refusal is never
-   re-asked), only when this device can notify and push is off. In the app the
-   permission is the native one (localNotificationPermission), never the
-   WebView's Notification. The rules are pushAskDue in app-logic.js. */
+/* The permission check after a timed save (a reminder with a time, a habit
+   with a reminder time, first-run's close when its goal step made timed ones):
+   if this device can't ring it, say so and offer the fix. Notifications off:
+   Allow (the system sheet), or the app's settings page once the phone has
+   refused. Notifications on but the lock-screen ring blocked (Android 14+,
+   ring like an alarm on): that system page. At most once per app session
+   (`permsAsked`, set before asking, so two quick saves ask once), never inside
+   first-run or the tour. The notification rule is pushAskDue in app-logic.js. */
+let permsAsked = false;
 async function askPushOnce(needs) {
-  if (!needs || !state.user || firstRunOpen || !pushSupported()) return;
+  if (!needs || !state.user || firstRunOpen || permsAsked || !pushSupported()) return;
   const native = localNotificationsAvailable();
   const [subscribed, permission] = await Promise.all([
     pushSubscribed(),
     native ? localNotificationPermission() : typeof Notification !== 'undefined' ? Notification.permission : 'denied',
   ]);
   // Re-read after the awaits: two quick saves must not both ask.
-  const due = pushAskDue({
-    needs,
-    setupOpen: firstRunOpen,
-    asked: !!(state.user && (state.user.uiPrefs || {}).pushAsked),
-    supported: true,
-    subscribed,
-    permission,
+  if (permsAsked || firstRunOpen || !state.user) return;
+  const due = pushAskDue({ needs, setupOpen: firstRunOpen, asked: permsAsked, supported: true, subscribed, permission, native });
+  if (due) {
+    permsAsked = true;
+    const refused = permission === 'denied';
+    openModal({
+      title: 'Turn on notifications',
+      sub: refused
+        ? 'Notifications are off for Growth Buddy, so this reminder won’t ring. Turn them on in the app’s settings.'
+        : 'So this reminder rings on time, even with the app closed.',
+      primary: refused ? 'Open settings' : 'Allow',
+      dismiss: 'Not now',
+      // Not awaited: the modal closes first, then the system sheet shows.
+      onPrimary: () => {
+        if (refused) openAppSettings();
+        else enablePushFlow('Notifications on. Your reminders will ring here.').then((on) => on && askLockScreenRing());
+      },
+    });
+    return;
+  }
+  if (subscribed && !permsAsked) {
+    permsAsked = true;
+    askLockScreenRing();
+  }
+}
+
+/* Ring like an alarm is on but Android 14+ has full screen notifications
+   switched off: the ring can't show over the lock screen. Only a system page
+   turns it back on. */
+async function askLockScreenRing() {
+  if (!reminderRing() || (await fullScreenStatus()) !== 'blocked') return;
+  openModal({
+    title: 'Ring on the lock screen',
+    sub: 'Your phone stops reminders from ringing over the lock screen. Switch on full screen notifications for Growth Buddy.',
+    primary: 'Open settings',
+    dismiss: 'Not now',
+    onPrimary: () => {
+      openFullScreenSettings();
+    },
   });
-  if (!due || !state.user) return;
-  saveUiPrefs({ pushAsked: true });
-  enablePushFlow('Notifications on. Your reminders will ring here.');
 }
 
 /* ---- First-run setup ----
@@ -2471,6 +2505,7 @@ async function openTour({ thenSetup = false } = {}) {
     snoozeMinutes,
     minutesLabel,
     ringRow: () => ringSettingRow(),
+    ringOn: reminderRing,
     onClose: () => {
       tourOpen = false;
       firstRunOpen = false;

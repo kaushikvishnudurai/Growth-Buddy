@@ -11,7 +11,7 @@
 
 import { h, Icon, refreshIcons, openOverlay, segmented } from './gb-kit.js';
 import { addDays } from './dates.js';
-import { canRingLikeAlarm } from './native.js';
+import { canRingLikeAlarm, fullScreenStatus, openFullScreenSettings } from './native.js';
 import { firstSlot } from './app-logic.js';
 import { pushSupported, pushSubscribed } from './push.js';
 
@@ -19,7 +19,7 @@ import { pushSupported, pushSubscribed } from './push.js';
  * Open the tour. `ctx`: { todayKey, nowHHMM (the account's clock),
  * addReminder(key, text, time) -> created|null, enablePushFlow(msg) -> bool,
  * saveUiPrefs, snoozeMinutes(), minutesLabel(m), ringRow() (the Settings
- * switch, ring-row.js), onClose() }.
+ * switch, ring-row.js), ringOn() (that switch's state), onClose() }.
  */
 export function openTour(ctx) {
   const { sheet, close } = openOverlay({
@@ -253,11 +253,23 @@ export function openTour(ctx) {
     }
     if (canRingLikeAlarm()) rows.push(ctx.ringRow());
     if (!rows.length) rows.push(h('p', { class: 'gb-setup-text' }, 'This browser can’t show notifications. Reminders still appear in the app and on WhatsApp.'));
+    const canAsk = pushSupported() || canRingLikeAlarm();
     return {
       title: 'How reminders reach you',
       sub: 'Each one says why it is needed. You can change them later in Settings.',
       body: h('div', { class: 'gb-tour-perms' }, ...rows),
-      primary: 'Next',
+      primary: canAsk ? 'Allow all' : 'Next',
+      // Every permission in one tap: the notification sheet, then (ring on,
+      // Android 14+ blocking it) the lock-screen page, the only way to grant that.
+      onPrimary: canAsk
+        ? async () => {
+            if (pushSupported() && !(await pushSubscribed().catch(() => false))) {
+              ctx.saveUiPrefs({ pushAsked: true });
+              await ctx.enablePushFlow('Notifications on.');
+            }
+            if (canRingLikeAlarm() && ctx.ringOn() && (await fullScreenStatus()) === 'blocked') await openFullScreenSettings();
+          }
+        : null,
       skip: 'Not now',
     };
   }

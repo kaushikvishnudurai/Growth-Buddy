@@ -213,9 +213,9 @@ export function firstSlot(hhmm) {
 }
 
 /* Whether saving something timed should ask for notifications now: once per
-   account (`asked` = ui_prefs.pushAsked), never inside first-run, only where
-   the platform can notify, push is off on this device and the user hasn't
-   already refused it (`permission` 'denied'). */
-export function pushAskDue({ needs, setupOpen, asked, supported, subscribed, permission }) {
-  return !!needs && !setupOpen && !asked && !!supported && !subscribed && permission !== 'denied';
+   app session (`asked`), never inside first-run, only where the platform can
+   notify and push is off on this device. A refusal ('denied') still asks in
+   the phone app, which can open its own settings page; a browser can't. */
+export function pushAskDue({ needs, setupOpen, asked, supported, subscribed, permission, native }) {
+  return !!needs && !setupOpen && !asked && !!supported && !subscribed && (permission !== 'denied' || !!native);
 }

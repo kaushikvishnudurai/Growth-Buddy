@@ -40,6 +40,16 @@ export async function openFullScreenSettings() {
   }
 }
 
+/** The app's own page in the phone's settings (notifications, permissions). */
+export async function openAppSettings() {
+  const P = nativePlugin('AppPermissions');
+  try {
+    if (P) await P.openSettings();
+  } catch (_) {
+    /* an older APK */
+  }
+}
+
 /**
  * The public web address of the app, no trailing slash: what a link meant for
  * someone else (a Circle invite, the privacy policy, "download it on the
